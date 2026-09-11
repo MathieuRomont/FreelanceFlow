@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This document describes the planned architecture; no application or infrastructure is initialized yet. FreelanceFlow starts with one freelancer per workspace and hourly billing.
+This document describes the target architecture. The technical foundation now includes a FastAPI health endpoint, a Next.js home page, PostgreSQL Compose configuration, and CI. Business modules and the background worker are not implemented yet. FreelanceFlow starts with one freelancer per workspace and hourly billing.
 
 `billing-rules.md` is authoritative for whether a business rule is CONFIRMED, PROPOSED, or UNRESOLVED. This document must not silently promote unresolved business rules.
 
@@ -12,7 +12,7 @@ Use one Python backend codebase with explicit module boundaries and one PostgreS
 
 The Next.js/TypeScript frontend is a separate application in the same repository. It consumes backend contracts and supports review/editing workflows; the backend owns authoritative billing calculations and state transitions.
 
-Proposed layout (not scaffolded by this documentation):
+Target layout (only the technical foundation is scaffolded so far):
 
 ```text
 backend/
@@ -116,4 +116,4 @@ External operations must be idempotent. A provider timeout can leave the result 
 
 Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering/artifact storage. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports.
 
-Exact libraries, email provider, worker mechanism, and artifact storage are unresolved implementation choices. Docker and GitHub Actions remain planned development infrastructure.
+Exact libraries, email provider, worker mechanism, and artifact storage are unresolved implementation choices. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
