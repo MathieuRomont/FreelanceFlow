@@ -58,3 +58,8 @@ The invoice lifecycle includes draft, approval, and sent content. Scheduling and
 Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits during delivery, and approval invalidation during sending are defined. A pre-send approval check alone is insufficient; the concurrency policy remains unresolved.
 
 Approval applies to an exact invoice revision and frozen artifact, and delivery must use that corresponding artifact. Invoice versions must retain the calculation inputs and results needed to explain the bill. Historical approvals and delivery attempts remain auditable after edits, failures, or corrections.
+
+Issue #11 confirms that Client requires a nonblank name. Empty and Unicode
+whitespace-only names are rejected; supplied nonblank names are preserved without
+trimming or an arbitrary maximum length. Client remains an immutable dataclass.
+Application creation generates its UUID; HTTP callers cannot supply that identifier.

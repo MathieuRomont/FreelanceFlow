@@ -65,3 +65,34 @@ uv run --frozen --extra dev pytest tests/integration/test_persistence.py::test_m
 CI starts PostgreSQL 17, supplies both URLs, installs the frozen lockfile, upgrades the main CI database, and runs the same checks and disposable-database integration suite. Production migration orchestration is outside scope.
 
 No sign policy, overlap exclusions, billing precision/rounding, timestamp-to-rate-date policy, billing eligibility, review, invoice, delivery, allocation, or retention rules are introduced.
+
+## Client HTTP slice (issue #11)
+
+Client names were already persisted by revision `0001`. Revision `0002` adds only
+`ck_clients_nonblank_name`, using an explicit Unicode whitespace set matching Python's
+`str.strip()` validation. It neither trims nor repairs rows. Existing blank names cause
+upgrade to fail transactionally; correct them explicitly before retrying. Downgrade to
+`0001` removes only that constraint. There is no name length limit.
+
+`ClientService` exposes create/get/list use cases through a client-specific transaction
+port, independently of HTTP. Create generates a UUID in the application. The SQLAlchemy
+transaction adapter opens a session and transaction per use case, commits on successful
+exit, and rolls back on failure. Repositories flush only and return immutable domain
+objects. `ClientRepository.list_clients()` filters by workspace and orders by UUID.
+
+Bootstrap supplies the service to explicit Pydantic/FastAPI boundaries:
+
+- `POST /workspaces/{workspace_id}/clients` accepts only `name`, returning 201.
+- `GET /workspaces/{workspace_id}/clients` returns a workspace-scoped array with 200.
+- `GET /workspaces/{workspace_id}/clients/{client_id}` returns 200 or the same 404
+  for missing and cross-workspace clients.
+
+Responses contain `id`, `workspace_id`, and `name`. Invalid transport data and blank
+names return 422. Nonblank names retain their original whitespace. `DATABASE_URL`
+configures persistence at application lifespan startup; health remains available without
+it. Client endpoints require database configuration. No authentication or authorization
+system is introduced; explicit workspace routes provide scoping, not access control.
+
+The PostgreSQL tests cover existing rows across upgrade/downgrade, failed upgrade with
+unchanged data and revision, manual correction and retry, all Python whitespace code
+points, persistence through HTTP, workspace isolation, and rollback after flushed writes.

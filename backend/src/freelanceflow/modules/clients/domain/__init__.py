@@ -4,11 +4,19 @@ from dataclasses import dataclass
 from uuid import UUID
 
 
+class InvalidClientName(ValueError):
+    """A client name must contain a non-whitespace character."""
+
+
 @dataclass(frozen=True)
 class Client:
     id: UUID
     workspace_id: UUID
     name: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise InvalidClientName("Client name must not be blank")
 
 
 @dataclass(frozen=True)
