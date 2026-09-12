@@ -1,4 +1,4 @@
-"""Pure client and project domain objects."""
+"""Pure client, project, and task domain objects."""
 
 from dataclasses import dataclass
 from uuid import UUID
@@ -17,4 +17,13 @@ class Project:
 
     id: UUID
     client: Client
+    name: str
+
+
+@dataclass(frozen=True)
+class Task:
+    """A work category inheriting client and workspace ownership from one project."""
+
+    id: UUID
+    project: Project
     name: str
