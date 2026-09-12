@@ -27,6 +27,13 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - TimeEntry duration is exact elapsed time between instants, including across daylight-saving transitions, without float conversion. The domain implementation uses `timedelta` to preserve timestamp microseconds and retains the supplied timezone context.
 - These interval rules do not settle billable-duration adjustments, rounding, breaks, daily segmentation, overlaps, all-day events, or review/approval workflows.
 
+### Manual TimeEntry classification (issue #7)
+
+- Entries are either completely unclassified (no Client, Project, or Task) or assigned a Client and Project together, with an optional Task, preserving the ownership chain above. Client-only and project-only classifications are invalid.
+- Reclassification and clearing all classification are allowed.
+- Classification preserves start, end, exact elapsed duration, and the billable flag.
+- Billable state is independent of classification. Classification introduces no review, approval, billing eligibility, or automatic assignment behavior.
+
 ### Money and effective rates
 
 - Use Decimal, never float, for monetary values and billing calculations. Do not introduce float conversions at persistence or API boundaries.
