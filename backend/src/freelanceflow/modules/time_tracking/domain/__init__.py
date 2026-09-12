@@ -1,6 +1,6 @@
 """Pure work intervals and exact elapsed duration."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -45,6 +45,8 @@ class TimeEntry:
             raise InvalidTimeEntryError("End instant must be strictly after start instant")
         if not isinstance(self.billable, bool):
             raise InvalidTimeEntryError("Billable must be an explicit boolean")
+        if (self.client is None) != (self.project is None):
+            raise TimeEntryOwnershipError("Client and project must be assigned together")
         if self.client is not None and self.client.workspace_id != self.workspace_id:
             raise TimeEntryOwnershipError("Client must belong to the time entry workspace")
         if self.project is not None and (
@@ -67,3 +69,21 @@ class TimeEntry:
     def duration(self) -> timedelta:
         """Actual elapsed time, with no rounding or conversion to floating-point hours."""
         return self.end.astimezone(UTC) - self.start.astimezone(UTC)
+
+
+def classify_time_entry(
+    entry: TimeEntry, *, client: Client, project: Project, task: Task | None = None
+) -> TimeEntry:
+    """Assign or replace the complete classification, preserving all interval data.
+
+    Omitting task clears any previous task. The new immutable entry validates
+    the ownership chain and all existing TimeEntry invariants.
+    """
+    if client is None or project is None:
+        raise TimeEntryOwnershipError("Classification requires both client and project")
+    return replace(entry, client=client, project=project, task=task)
+
+
+def clear_time_entry_classification(entry: TimeEntry) -> TimeEntry:
+    """Return a validated, unclassified copy, preserving interval and billable state."""
+    return replace(entry, client=None, project=None, task=None)

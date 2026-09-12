@@ -33,6 +33,8 @@ Issue #5 implements Task as a category belonging to exactly one Project, carryin
 
 TimeEntry requires end strictly after start as instants. Its exact elapsed duration is a `timedelta` computed after converting both timestamps to UTC, preserving microseconds across midnight and daylight-saving transitions. Supplied timestamps retain timezone context. This is raw elapsed duration, with no billing conversion, rounding, daily splitting, overlap policy, or review/approval states.
 
+Issue #7 adds explicit immutable operations: `classify_time_entry(entry, *, client, project, task=None)` assigns or replaces the complete classification; omitting Task clears any previous Task. `clear_time_entry_classification(entry)` removes all three references. Both return new entries, rerun existing validation, and preserve timestamps, elapsed duration, and billable state. These operations add no review, approval, eligibility, or automatic classification behavior.
+
 ## Relationships and lifecycle
 
 ```text

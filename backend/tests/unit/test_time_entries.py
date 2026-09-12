@@ -113,7 +113,7 @@ def test_nonpositive_interval(end: datetime) -> None:
 
 
 @pytest.mark.parametrize("billable", [True, False])
-@pytest.mark.parametrize("level", ["workspace", "client", "project", "task"])
+@pytest.mark.parametrize("level", ["workspace", "project", "task"])
 def test_optional_classification_and_explicit_billable(billable: bool, level: str) -> None:
     result = TimeEntry(
         UUID(int=5),
