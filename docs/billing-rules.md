@@ -23,9 +23,15 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - Use Decimal, never float, for monetary values and billing calculations. Do not introduce float conversions at persistence or API boundaries.
 - Each invoice has exactly one currency. Do not silently combine currencies or convert between them.
 - Rates are effective-dated and may differ by client, project, and date.
-- An applicable project rate overrides an applicable client rate. Their coexistence is not itself a conflict.
-- Missing rates or conflicting applicable rates block billing of the affected time. Do not substitute zero or arbitrarily select one.
-- A date-only effective rate boundary needs a documented timezone interpretation.
+- Determine the highest applicable precedence level first. Project-level rates take precedence over client-level rates.
+- If one or more applicable project rates exist, resolve only at project level. More than one applicable project rate is a conflict.
+- If no project rate applies, resolve at client level. More than one applicable client rate is a conflict.
+- A lower-precedence conflict must not block a unique higher-precedence applicable rate.
+- Missing rates or conflicts at the highest applicable precedence level block billing of the affected time. Do not substitute zero or arbitrarily select one.
+- RateAgreement validity uses half-open date intervals `[valid_from, valid_until)`: the start is inclusive, the end is exclusive, and a null end means open-ended.
+- The rate resolver receives an already-interpreted business date. Timezone and timestamp-to-business-date conversion are outside issue #3 and remain unresolved.
+- Conflicts at the selected precedence level raise an explicit domain error during resolution. This does not decide whether overlaps should be rejected globally when agreements are created or edited.
+- Confirmed example: Rate A runs from 2026-01-01 to 2026-09-01; Rate B starts 2026-09-01 with no end. August 31 resolves A; September 1 resolves B. A client rate of 80 EUR/hour resolves to 80; an applicable project rate of 100 EUR/hour overrides it. Missing rates and conflicts at the selected precedence level raise explicit domain errors. A unique project rate of 100 EUR/hour still resolves when applicable client rates of 80 and 90 EUR/hour overlap.
 
 ### Invoice content and approval
 
@@ -50,11 +56,10 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 - Time Tracking owns calendar/work interval duration and local-day splitting.
 - Billing owns splitting required specifically by pricing/rate-boundary changes and reuses Time Tracking duration calculations; do not duplicate duration calculations.
-- Ownership is confirmed; exact timezone, duration, and rate-boundary policies remain unresolved below.
+- Ownership is confirmed; timezone conversion, duration, and splitting work across rate boundaries remain unresolved below.
 
 ## PROPOSED rules requiring confirmation
 
-- Represent effective-rate intervals as half-open ranges: `[start, end)`, optionally without an end date.
 - Measure elapsed work with integer duration units; convert to Decimal hours during billing.
 - Use deterministic classification suggestions initially. Ambiguous/unclassified entries remain subject to the confirmed blocking or explicit-exclusion rule.
 
@@ -75,8 +80,8 @@ Do not infer a final concurrency policy from the outbox, worker, or pre-send eli
 | Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |
 | Duration policy | Is billable duration actual elapsed time across daylight-saving transitions? What precision is retained? How are breaks recorded? |
 | Rounding | Which increment, rounding mode, and stage apply: entry, day, line, or invoice? How are tax and subtotal rounding reconciled? |
-| Rate boundaries | Confirm half-open date ranges, open-ended rates, and treatment of entries spanning rate changes. |
-| Rate edits and validation | Reject overlapping rates at entry time or flag them? How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
+| Rate boundaries | How are entries spanning rate changes treated? Date-range inclusivity and open-ended agreements are confirmed above. |
+| Rate edits and validation | Resolution rejects conflicts only at the highest applicable precedence level. Whether overlapping agreements should be rejected globally at creation/edit time remains UNRESOLVED. How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
 | Time review and eligibility | What optional TimeEntry review workflow is needed? Which edits affect eligibility? When do ambiguous, unclassified, or unbillable entries block generation versus get explicitly excluded, and how is exclusion shown? Individual entry approval is not required to generate a draft. |
 | Overlap and all-day events | How are overlapping work intervals resolved? Are all-day events excluded or manually converted? |
 | Source reconciliation | How do cancellation, deletion, recurrence changes, entry splits/merges, and edits to already billed source events behave? |
