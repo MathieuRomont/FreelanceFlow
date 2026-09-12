@@ -1,6 +1,6 @@
 # FreelanceFlow
 
-Freelance time tracking and invoicing. This foundation contains a FastAPI health endpoint, a Next.js home page, and local PostgreSQL. Business features and database integration are not implemented yet.
+Freelance time tracking and invoicing. This foundation contains a FastAPI health endpoint, a Next.js home page, and local PostgreSQL. Core client, rate, and time-entry domain objects now have PostgreSQL persistence; business API routes are not implemented.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ docker compose up -d --wait postgres
 
 PostgreSQL is available on `127.0.0.1:5432`; adjust `POSTGRES_PORT` if needed. Data persists in the `postgres_data` named volume. `docker compose down` stops the service without deleting that volume. Initialization credentials apply when the data directory is first created; editing `.env` does not change an existing database password.
 
-The root `.env` configures Compose only. The scaffold backend does not connect to PostgreSQL and the frontend needs no environment variables.
+The root `.env` configures Compose. Persistence tools use an explicit `DATABASE_URL` with the `postgresql+psycopg` driver; the health endpoint does not connect to the database. See [persistence setup and migrations](docs/persistence.md). The frontend needs no environment variables.
 
 ## Backend
 
@@ -72,7 +72,7 @@ npm run typecheck
 npm run build
 ```
 
-Type checking generates Next.js route types before running TypeScript, so it works before the first build. GitHub Actions runs these checks in separate backend and frontend jobs on pull requests and pushes to `main`. No database or provider credentials are required for these checks.
+Type checking generates Next.js route types before running TypeScript, so it works before the first build. GitHub Actions runs these checks in separate backend and frontend jobs on pull requests and pushes to `main`. Unit tests need no database or provider credentials. PostgreSQL integration tests run when `TEST_DATABASE_URL` is set (required in CI), using disposable databases created and dropped by the test role. See [persistence validation](docs/persistence.md).
 
 ## Architecture
 
