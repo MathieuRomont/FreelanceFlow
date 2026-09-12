@@ -29,6 +29,10 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | DeliveryAttempt | Job reference, attempt time, provider request/message identifiers, outcome, sanitized error metadata | Distinguishes accepted, failed, and uncertain outcomes; attempts do not mutate sent invoice content |
 | AuditEvent | Actor, timestamp, entity/version, action, relevant change information, correlation identifier | Append-only; records important changes without secrets or unnecessary sensitive source payloads |
 
+Issue #5 implements Task as a category belonging to exactly one Project, carrying client and workspace ownership through that project. TimeEntry explicitly carries workspace ownership, aware start/end timestamps, a billable flag, and optional client/project/task references. Classification must form a consistent ownership chain: a project requires its selected client, and a task requires its selected project, all within the entry workspace.
+
+TimeEntry requires end strictly after start as instants. Its exact elapsed duration is a `timedelta` computed after converting both timestamps to UTC, preserving microseconds across midnight and daylight-saving transitions. Supplied timestamps retain timezone context. This is raw elapsed duration, with no billing conversion, rounding, daily splitting, overlap policy, or review/approval states.
+
 ## Relationships and lifecycle
 
 ```text

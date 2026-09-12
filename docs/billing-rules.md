@@ -18,6 +18,15 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - Calendar source updates must not silently overwrite reviewed TimeEntries. Surface discrepancies for reconciliation.
 - The freelancer reviews the resulting invoice before approval. Manual review and explicit invoice approval are required before client delivery; the detailed TimeEntry review workflow remains unresolved.
 
+### Task and TimeEntry intervals (issue #5)
+
+- A Task belongs to exactly one Project, inheriting its client and workspace ownership.
+- A TimeEntry belongs to one Workspace and may be unclassified or linked to a Client, Project, and optional Task. A selected Client must belong to that workspace; a selected Project requires that Client and must belong to it; a selected Task requires that Project and must belong to it.
+- A TimeEntry can be marked billable or non-billable; this flag does not define billing eligibility or review state.
+- Start and end must be timezone-aware instants, with end strictly after start.
+- TimeEntry duration is exact elapsed time between instants, including across daylight-saving transitions, without float conversion. The domain implementation uses `timedelta` to preserve timestamp microseconds and retains the supplied timezone context.
+- These interval rules do not settle billable-duration adjustments, rounding, breaks, daily segmentation, overlaps, all-day events, or review/approval workflows.
+
 ### Money and effective rates
 
 - Use Decimal, never float, for monetary values and billing calculations. Do not introduce float conversions at persistence or API boundaries.
@@ -56,11 +65,11 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 - Time Tracking owns calendar/work interval duration and local-day splitting.
 - Billing owns splitting required specifically by pricing/rate-boundary changes and reuses Time Tracking duration calculations; do not duplicate duration calculations.
-- Ownership is confirmed; timezone conversion, duration, and splitting work across rate boundaries remain unresolved below.
+- Ownership is confirmed; billing timezone conversion, billable-duration adjustments, and splitting work across rate boundaries remain unresolved below.
 
 ## PROPOSED rules requiring confirmation
 
-- Measure elapsed work with integer duration units; convert to Decimal hours during billing.
+- Convert exact elapsed duration to Decimal hours during billing; billing conversion remains unconfirmed.
 - Use deterministic classification suggestions initially. Ambiguous/unclassified entries remain subject to the confirmed blocking or explicit-exclusion rule.
 
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
@@ -78,7 +87,7 @@ Do not infer a final concurrency policy from the outbox, worker, or pre-send eli
 | Decision | Questions to settle before implementation |
 | --- | --- |
 | Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |
-| Duration policy | Is billable duration actual elapsed time across daylight-saving transitions? What precision is retained? How are breaks recorded? |
+| Duration policy | Raw TimeEntry elapsed duration and microsecond preservation are confirmed by issue #5. How does elapsed duration translate to billable duration? How are breaks recorded? |
 | Rounding | Which increment, rounding mode, and stage apply: entry, day, line, or invoice? How are tax and subtotal rounding reconciled? |
 | Rate boundaries | How are entries spanning rate changes treated? Date-range inclusivity and open-ended agreements are confirmed above. |
 | Rate edits and validation | Resolution rejects conflicts only at the highest applicable precedence level. Whether overlapping agreements should be rejected globally at creation/edit time remains UNRESOLVED. How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
