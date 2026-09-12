@@ -1,0 +1,40 @@
+[1mdiff --git a/docs/billing-rules.md b/docs/billing-rules.md[m
+[1mindex 2d5130f..6cba649 100644[m
+[1m--- a/docs/billing-rules.md[m
+[1m+++ b/docs/billing-rules.md[m
+[36m@@ -25,7 +25,10 @@[m [mThis document is the authoritative source for whether a business rule is CONFIRM[m
+ - Rates are effective-dated and may differ by client, project, and date.[m
+ - An applicable project rate overrides an applicable client rate. Their coexistence is not itself a conflict.[m
+ - Missing rates or conflicting applicable rates block billing of the affected time. Do not substitute zero or arbitrarily select one.[m
+[31m-- A date-only effective rate boundary needs a documented timezone interpretation.[m
+[32m+[m[32m- RateAgreement validity uses half-open date intervals `[valid_from, valid_until)`: the start is inclusive, the end is exclusive, and a null end means open-ended.[m
+[32m+[m[32m- The rate resolver receives an already-interpreted business date. Timezone and timestamp-to-business-date conversion are outside issue #3 and remain unresolved.[m
+[32m+[m[32m- Overlapping applicable agreements at the same precedence level are invalid and raise an explicit domain error during resolution; a project override must not hide a conflict among applicable client agreements.[m
+[32m+[m[32m- Confirmed example: Rate A runs from 2026-01-01 to 2026-09-01; Rate B starts 2026-09-01 with no end. August 31 resolves A; September 1 resolves B. A client rate of 80 EUR/hour resolves to 80; an applicable project rate of 100 EUR/hour overrides it. Missing rates and same-level conflicts raise explicit domain errors.[m
+ [m
+ ### Invoice content and approval[m
+ [m
+[36m@@ -50,11 +53,10 @@[m [mThis document is the authoritative source for whether a business rule is CONFIRM[m
+ [m
+ - Time Tracking owns calendar/work interval duration and local-day splitting.[m
+ - Billing owns splitting required specifically by pricing/rate-boundary changes and reuses Time Tracking duration calculations; do not duplicate duration calculations.[m
+[31m-- Ownership is confirmed; exact timezone, duration, and rate-boundary policies remain unresolved below.[m
+[32m+[m[32m- Ownership is confirmed; timezone conversion, duration, and splitting work across rate boundaries remain unresolved below.[m
+ [m
+ ## PROPOSED rules requiring confirmation[m
+ [m
+[31m-- Represent effective-rate intervals as half-open ranges: `[start, end)`, optionally without an end date.[m
+ - Measure elapsed work with integer duration units; convert to Decimal hours during billing.[m
+ - Use deterministic classification suggestions initially. Ambiguous/unclassified entries remain subject to the confirmed blocking or explicit-exclusion rule.[m
+ [m
+[36m@@ -75,8 +77,8 @@[m [mDo not infer a final concurrency policy from the outbox, worker, or pre-send eli[m
+ | Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |[m
+ | Duration policy | Is billable duration actual elapsed time across daylight-saving transitions? What precision is retained? How are breaks recorded? |[m
+ | Rounding | Which increment, rounding mode, and stage apply: entry, day, line, or invoice? How are tax and subtotal rounding reconciled? |[m
+[31m-| Rate boundaries | Confirm half-open date ranges, open-ended rates, and treatment of entries spanning rate changes. |[m
+[31m-| Rate edits and validation | Reject overlapping rates at entry time or flag them? How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |[m
+[32m+[m[32m| Rate boundaries | How are entries spanning rate changes treated? Date-range inclusivity and open-ended agreements are confirmed above. |[m
+[32m+[m[32m| Rate edits and validation | Resolution rejects applicable same-level overlaps. Should overlaps also be rejected at entry time? How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |[m
+ | Time review and eligibility | What optional TimeEntry review workflow is needed? Which edits affect eligibility? When do ambiguous, unclassified, or unbillable entries block generation versus get explicitly excluded, and how is exclusion shown? Individual entry approval is not required to generate a draft. |[m
+ | Overlap and all-day events | How are overlapping work intervals resolved? Are all-day events excluded or manually converted? |[m
+ | Source reconciliation | How do cancellation, deletion, recurrence changes, entry splits/merges, and edits to already billed source events behave? |[m

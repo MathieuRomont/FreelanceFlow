@@ -28,7 +28,7 @@
 - Calendar source updates must not silently overwrite reviewed time entries.
 - TimeEntries may be edited and classified; eligible entries may generate invoice drafts without individual approval. The freelancer reviews the resulting invoice before approval. Ambiguous, unclassified, or unbillable entries must block generation or be explicitly excluded; the detailed TimeEntry review workflow remains unresolved.
 - Allocated TimeEntries must belong to the invoice workspace and client, have compatible project/task relationships, and match the invoice currency/rate context.
-- Project rates override client rates. Rates are effective-dated; missing or conflicting applicable rates block billing.
+- Rates are effective-dated. Resolve at the highest applicable precedence level: project if any project rate applies, otherwise client. Missing rates or multiple applicable rates at the selected level block billing; lower-level conflicts cannot block a unique project rate. Global overlap rejection at creation/edit time remains unresolved.
 - Approved invoice content is versioned. Approval applies to an exact invoice revision and frozen artifact; delivery must use the artifact corresponding to that approved revision. Editing approved content invalidates approval.
 - Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits during delivery, and approval invalidation during sending are defined in `docs/billing-rules.md`. A pre-send approval check alone is insufficient; do not invent the concurrency policy.
 - Sent invoice content is immutable. Record corrections separately; never rewrite sent content or its stored artifact.
