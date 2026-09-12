@@ -30,6 +30,14 @@ class ClientRepository:
             return None
         return Client(row.id, row.workspace_id, row.name)
 
+    def list_clients(self) -> list[Client]:
+        rows = self.session.scalars(
+            select(ClientRow)
+            .where(ClientRow.workspace_id == self.workspace_id)
+            .order_by(ClientRow.id)
+        )
+        return [Client(row.id, row.workspace_id, row.name) for row in rows]
+
     def add_project(self, value: Project) -> None:
         if value.client.workspace_id != self.workspace_id:
             raise ValueError("Workspace mismatch")
