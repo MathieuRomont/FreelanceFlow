@@ -45,6 +45,22 @@ class InvoiceDraftRow(Base):
     __tablename__ = "invoice_drafts"
     __table_args__ = (
         PrimaryKeyConstraint("id", "revision"),
+        ForeignKeyConstraint(
+            [
+                "id",
+                "workspace_id",
+                "client_id",
+                "currency",
+                "currency_decimal_places",
+            ],
+            [
+                "invoice_draft_heads.id",
+                "invoice_draft_heads.workspace_id",
+                "invoice_draft_heads.client_id",
+                "invoice_draft_heads.currency",
+                "invoice_draft_heads.currency_decimal_places",
+            ],
+        ),
         UniqueConstraint(
             "id",
             "revision",
@@ -87,6 +103,31 @@ class InvoiceDraftRow(Base):
     exact_subtotal_denominator: Mapped[Decimal] = mapped_column(Numeric())
     subtotal_minor_units: Mapped[Decimal] = mapped_column(Numeric())
     total_minor_units: Mapped[Decimal] = mapped_column(Numeric())
+
+
+class InvoiceDraftHeadRow(Base):
+    __tablename__ = "invoice_draft_heads"
+    __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "client_id",
+            "currency",
+            "currency_decimal_places",
+        ),
+        CheckConstraint("current_revision > 0", name="positive_current_revision"),
+        CheckConstraint(
+            "currency = 'EUR' AND currency_decimal_places = 2",
+            name="supported_currency_precision",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[UUID]
+    client_id: Mapped[UUID]
+    currency: Mapped[str]
+    currency_decimal_places: Mapped[int] = mapped_column(Integer)
+    current_revision: Mapped[int] = mapped_column(Integer)
 
 
 class InvoiceLineRow(Base):

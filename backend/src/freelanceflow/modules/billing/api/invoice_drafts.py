@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator
 
 from freelanceflow.modules.billing.application.invoice_drafts import (
     InvoiceAllocationInput,
+    InvoiceDraftIdentityChangeError,
     InvoiceDraftResourceNotFound,
     InvoiceDraftService,
     InvoiceLineConstructionInput,
@@ -53,6 +54,12 @@ class CreateInvoiceDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_id: UUID
+    lines: list[CreateInvoiceLineRequest]
+
+
+class CreateInvoiceRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lines: list[CreateInvoiceLineRequest]
 
 
@@ -174,6 +181,25 @@ def _not_found() -> HTTPException:
     return HTTPException(status_code=404, detail="Resource not found")
 
 
+def _line_inputs(
+    lines: list[CreateInvoiceLineRequest],
+) -> tuple[InvoiceLineConstructionInput, ...]:
+    return tuple(
+        InvoiceLineConstructionInput(
+            allocations=tuple(
+                InvoiceAllocationInput(
+                    time_entry_id=allocation.time_entry_id,
+                    start=allocation.start,
+                    end=allocation.end,
+                    business_date=allocation.business_date,
+                )
+                for allocation in line.allocations
+            )
+        )
+        for line in lines
+    )
+
+
 @router.post("", status_code=201, response_model=InvoiceDraftResponse)
 def create_invoice_draft(
     workspace_id: UUID, body: CreateInvoiceDraftRequest, service: Service
@@ -182,24 +208,40 @@ def create_invoice_draft(
         draft = service.create(
             workspace_id=workspace_id,
             client_id=body.client_id,
-            lines=tuple(
-                InvoiceLineConstructionInput(
-                    allocations=tuple(
-                        InvoiceAllocationInput(
-                            time_entry_id=allocation.time_entry_id,
-                            start=allocation.start,
-                            end=allocation.end,
-                            business_date=allocation.business_date,
-                        )
-                        for allocation in line.allocations
-                    )
-                )
-                for line in body.lines
-            ),
+            lines=_line_inputs(body.lines),
         )
     except InvoiceDraftResourceNotFound as error:
         raise _not_found() from error
     except (InvoiceDraftError, BillingCalculationError, RateError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return InvoiceDraftResponse.from_draft(draft)
+
+
+@router.post(
+    "/{invoice_draft_id}/revisions",
+    status_code=201,
+    response_model=InvoiceDraftResponse,
+)
+def create_invoice_draft_revision(
+    workspace_id: UUID,
+    invoice_draft_id: UUID,
+    body: CreateInvoiceRevisionRequest,
+    service: Service,
+) -> InvoiceDraftResponse:
+    try:
+        draft = service.create_revision(
+            workspace_id=workspace_id,
+            draft_id=invoice_draft_id,
+            lines=_line_inputs(body.lines),
+        )
+    except InvoiceDraftResourceNotFound as error:
+        raise _not_found() from error
+    except (
+        InvoiceDraftIdentityChangeError,
+        InvoiceDraftError,
+        BillingCalculationError,
+        RateError,
+    ) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return InvoiceDraftResponse.from_draft(draft)
 
@@ -209,6 +251,35 @@ def list_invoice_drafts(
     workspace_id: UUID, service: Service
 ) -> list[InvoiceDraftResponse]:
     return [InvoiceDraftResponse.from_draft(value) for value in service.list(workspace_id)]
+
+
+@router.get(
+    "/{invoice_draft_id}/revisions", response_model=list[InvoiceDraftResponse]
+)
+def list_invoice_draft_revisions(
+    workspace_id: UUID, invoice_draft_id: UUID, service: Service
+) -> list[InvoiceDraftResponse]:
+    try:
+        revisions = service.list_revisions(workspace_id, invoice_draft_id)
+    except InvoiceDraftResourceNotFound as error:
+        raise _not_found() from error
+    return [InvoiceDraftResponse.from_draft(value) for value in revisions]
+
+
+@router.get(
+    "/{invoice_draft_id}/revisions/{revision}", response_model=InvoiceDraftResponse
+)
+def get_invoice_draft_revision(
+    workspace_id: UUID,
+    invoice_draft_id: UUID,
+    revision: int,
+    service: Service,
+) -> InvoiceDraftResponse:
+    try:
+        draft = service.get_revision(workspace_id, invoice_draft_id, revision)
+    except InvoiceDraftResourceNotFound as error:
+        raise _not_found() from error
+    return InvoiceDraftResponse.from_draft(draft)
 
 
 @router.get("/{invoice_draft_id}", response_model=InvoiceDraftResponse)

@@ -21,7 +21,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | ClassificationRule | Matching criteria, priority, suggested client/project/task assignment | Workspace-scoped; suggestions must preserve valid client/project/task relationships; ambiguous matches require resolution |
 | TimeEntry | Editable work interval, source reference if imported, client/project/task assignment, billable flag, reconciliation status, optional review metadata (workflow unresolved) | May be manual or derived from a CalendarEvent; eligible entries can generate drafts without individual approval; source changes cannot silently overwrite reviewed content; billed time is traceable through allocations |
 | RateAgreement | Hourly Decimal amount, currency, client or project scope, effective start/end dates | Resolve at project level if any project rate applies, otherwise client level; conflicts only at the selected level block billing, as does a missing rate; effective-date interpretation must be explicit |
-| Invoice | Billing period metadata, explicit currency precision snapshot, issuer/client snapshots, content version, exact pre-rounding subtotal, rounded totals, lifecycle information, artifact reference | One currency; tax-free MVP total is the sum of rounded lines; immutable revision-1 drafts are persisted, while edits, approval, and artifacts are later work |
+| Invoice | Billing period metadata, explicit currency precision snapshot, issuer/client snapshots, content version, exact pre-rounding subtotal, rounded totals, lifecycle information, artifact reference | One currency; tax-free MVP total is the sum of rounded lines; modifications create complete immutable revisions under one logical identity; approval remains blocked until it can also identify a frozen artifact |
 | InvoiceLine | Exact duration, applied hourly rate and RateAgreement identity, exact rational amount, rounded integer minor-unit amount, and source allocations | Caller-grouped compatible segments are summed exactly and rounded once using the confirmed policy; snapshots calculations rather than reading mutable current rates |
 | InvoiceAllocation | Association between a billed TimeEntry segment and an invoice line, including allocated interval/quantity and provenance | Prevents duplicate billing of the same time; traces a line back to allocated work in the invoice workspace and client, with compatible project/task relationships and invoice currency/rate context; reservation/release policy remains unresolved |
 | InvoiceApproval | Approving freelancer, timestamp, invoice content version, artifact identity | Authorizes an exact invoice revision and frozen artifact; delivery must use the artifact corresponding to that revision; retained as history when later content changes invalidate it |
@@ -58,6 +58,13 @@ The invoice lifecycle includes draft, approval, and sent content. Scheduling and
 Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits during delivery, and approval invalidation during sending are defined. A pre-send approval check alone is insufficient; the concurrency policy remains unresolved.
 
 Approval applies to an exact invoice revision and frozen artifact, and delivery must use that corresponding artifact. Invoice versions must retain the calculation inputs and results needed to explain the bill. Historical approvals and delivery attempts remain auditable after edits, failures, or corrections.
+
+InvoiceDraft revisions are complete immutable snapshots. Revision 1 creates the logical
+invoice identity; later modifications preserve its workspace, client, and currency and
+insert monotonically increasing revisions without overwriting history. A current-revision
+pointer is concurrency metadata, not mutable invoice content. No approval record is valid
+without both an exact revision and the corresponding frozen artifact identity, so approval
+is not implemented before that artifact boundary exists.
 
 Issue #11 confirms that Client requires a nonblank name. Empty and Unicode
 whitespace-only names are rejected; supplied nonblank names are preserved without
