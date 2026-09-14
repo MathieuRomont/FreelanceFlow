@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from freelanceflow.modules.clients.application.catalog import ClientCatalog
+from freelanceflow.modules.clients.domain import Client, Project, Task
 from freelanceflow.modules.time_tracking.adapters.models import TimeEntryRow
 from freelanceflow.modules.time_tracking.domain import TimeEntry
 
@@ -51,6 +52,15 @@ class TimeEntryRepository:
         self.session.add(to_row(value))
         self.session.flush()
 
+    def get_client(self, entity_id: UUID) -> Client | None:
+        return self.clients.get_client(entity_id)
+
+    def get_project(self, entity_id: UUID) -> Project | None:
+        return self.clients.get_project(entity_id)
+
+    def get_task(self, entity_id: UUID) -> Task | None:
+        return self.clients.get_task(entity_id)
+
     def get(self, entity_id: UUID) -> TimeEntry | None:
         row = self.session.scalar(
             select(TimeEntryRow).where(
@@ -81,3 +91,32 @@ class TimeEntryRepository:
             project,
             task,
         )
+
+    def list(self) -> list[TimeEntry]:
+        identifiers = self.session.scalars(
+            select(TimeEntryRow.id)
+            .where(TimeEntryRow.workspace_id == self.workspace_id)
+            .order_by(TimeEntryRow.id)
+        )
+        entries: list[TimeEntry] = []
+        for entity_id in identifiers:
+            entry = self.get(entity_id)
+            assert entry is not None
+            entries.append(entry)
+        return entries
+
+    def update_classification(self, value: TimeEntry) -> None:
+        if value.workspace_id != self.workspace_id:
+            raise ValueError("Workspace mismatch")
+        row = self.session.scalar(
+            select(TimeEntryRow).where(
+                TimeEntryRow.id == value.id,
+                TimeEntryRow.workspace_id == self.workspace_id,
+            )
+        )
+        if row is None:
+            raise ValueError("TimeEntry is unavailable in this workspace")
+        row.client_id = value.client.id if value.client else None
+        row.project_id = value.project.id if value.project else None
+        row.task_id = value.task.id if value.task else None
+        self.session.flush()
