@@ -60,3 +60,100 @@
 - Avoid logging tokens, sensitive calendar payloads, or unnecessary personal and billing data. Minimize imported and retained data.
 - Audit approval, delivery, billing changes, and relevant access changes without putting secrets in audit records.
 - Treat external input as untrusted. Validate it at boundaries and preserve invariants in application/domain operations.
+
+## Codex efficiency
+
+Code quality, correctness, and data safety take priority over token or compute savings.
+
+FreelanceFlow should nevertheless avoid unnecessary model usage, repository exploration, abstraction, and computation.
+
+### Default working approach
+
+For normal tasks:
+
+1. Identify the relevant files and documented rules.
+2. Inspect only the code necessary to understand the change.
+3. Make the smallest coherent change.
+4. Update every test, migration, or document required for correctness.
+5. Run focused tests while implementing.
+6. Run the complete validation required by the task before declaring it safe to commit.
+7. Stop when the requested task is complete.
+
+Do not optimize token usage by skipping necessary analysis, tests, migrations, or documentation.
+
+### Repository exploration
+
+- Start with targeted searches and relevant files.
+- Read the relevant architecture and domain documentation before changing behavior governed by it.
+- Do not scan the entire repository unless the task genuinely requires it.
+- Do not repeatedly inspect files that have already been understood unless new evidence requires it.
+- Existing patterns may be reused only when they are consistent with AGENTS.md and documented architecture.
+
+### Implementation
+
+- Prefer simple, explicit implementations.
+- Avoid speculative abstractions and architecture for hypothetical future requirements.
+- Do not refactor unrelated code.
+- Do not introduce dependencies unless they provide clear value.
+- Make the smallest coherent change, not merely the smallest number of changed files.
+- Preserve module boundaries and confirmed domain invariants.
+
+### Tests and validation
+
+During implementation:
+- Prefer focused tests and checks for fast feedback.
+
+Before declaring a change safe to commit:
+- Run all validation required by the task.
+- Run the relevant complete test suite when the change can affect multiple layers.
+- Never skip integration or migration tests merely to save computation.
+- Do not rerun expensive checks when no relevant code has changed.
+
+### Database and migrations
+
+- Every schema change must use the established migration mechanism.
+- Do not modify an established historical migration merely to avoid creating a new migration.
+- Never silently rewrite existing production data to make a migration succeed unless that behavior has been explicitly approved.
+- Preserve explicit transaction boundaries and database invariants.
+
+### High-risk areas
+
+Treat the following as sensitive work:
+
+- billing and monetary calculations
+- rate resolution
+- invoice generation, approval, correction, or delivery
+- timezone and date-boundary logic
+- database migrations involving existing data
+- concurrency and transaction behavior
+- authentication and authorization
+- irreversible external actions
+- idempotency and retry behavior
+
+For sensitive work:
+
+- correctness takes priority over token efficiency
+- inspect the relevant domain and architecture rules first
+- identify important invariants and failure modes explicitly
+- use stronger reasoning when warranted
+- include adversarial and boundary-case tests
+- run complete relevant validation before safe-to-commit
+
+If the current model or reasoning level appears insufficient for a sensitive task, explicitly recommend escalation rather than compensating with a weak implementation.
+
+### Agent usage
+
+- Do not spawn additional agents for routine work.
+- Additional independent review is appropriate when it materially improves confidence in sensitive or complex changes.
+- Do not use additional agents merely because they are available.
+
+### Final response
+
+Keep completion reports concise.
+
+Report:
+- what changed
+- important files modified
+- tests/checks performed
+- unresolved issues or assumptions
+- whether the change is safe to commit
