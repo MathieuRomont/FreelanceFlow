@@ -304,6 +304,7 @@ def test_migration_cycle() -> None:
             "rate_agreements",
             "time_entries",
             "invoice_drafts",
+            "invoice_draft_heads",
             "invoice_lines",
             "invoice_allocations",
             "alembic_version",
@@ -313,3 +314,55 @@ def test_migration_cycle() -> None:
         assert set(inspect(engine).get_table_names()) <= {"alembic_version"}
         migrate(engine, "upgrade")
         migrate(engine, "check")
+
+
+def test_invoice_head_migration_backfills_existing_revision_history() -> None:
+    invoice_id = uuid4()
+    workspace_id = uuid4()
+    client_id = uuid4()
+    with disposable_database() as engine:
+        migrate(engine, "upgrade", "0003")
+        with engine.begin() as connection:
+            for revision in (1, 2):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO invoice_drafts (
+                            id, revision, workspace_id, client_id,
+                            currency, currency_decimal_places,
+                            exact_subtotal_numerator, exact_subtotal_denominator,
+                            subtotal_minor_units, total_minor_units
+                        ) VALUES (
+                            :id, :revision, :workspace_id, :client_id,
+                            'EUR', 2, 0, 1, 0, 0
+                        )
+                        """
+                    ),
+                    {
+                        "id": invoice_id,
+                        "revision": revision,
+                        "workspace_id": workspace_id,
+                        "client_id": client_id,
+                    },
+                )
+        migrate(engine, "upgrade")
+        with engine.connect() as connection:
+            head = connection.execute(
+                text(
+                    """
+                    SELECT workspace_id, client_id, currency,
+                           currency_decimal_places, current_revision
+                    FROM invoice_draft_heads
+                    WHERE id = :id
+                    """
+                ),
+                {"id": invoice_id},
+            ).one()
+        assert head == (workspace_id, client_id, "EUR", 2, 2)
+        migrate(engine, "check")
+        migrate(engine, "downgrade", "0003")
+        with engine.connect() as connection:
+            assert connection.scalar(
+                text("SELECT count(*) FROM invoice_drafts WHERE id = :id"),
+                {"id": invoice_id},
+            ) == 2

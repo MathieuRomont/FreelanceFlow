@@ -61,6 +61,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - For the initial pure Invoice Draft domain, callers explicitly select which `PricedSegment`s form each logical line. Every segment in one line must share workspace, client, project, task, currency, RateAgreement identity, and exact hourly rate. No grouping by description, source title, date, or other presentation field is implied.
 - Each line retains an allocation to every source priced segment. Duplicate source-segment allocations and overlapping allocations from the same TimeEntry are invalid because they would bill the same source interval twice. Overlapping intervals from distinct TimeEntries remain permitted; the broader work-overlap policy is unresolved.
 - Preserve the time provenance, applied rates, quantities, amounts, and customer/issuer details needed to explain historical invoice content.
+- Persisted InvoiceDraft content is immutable. A modification creates a complete new revision under the same logical invoice ID, workspace, client, and currency. Revision numbers increase monotonically from 1; prior revisions remain unchanged and reconstructible.
 - Approved invoice content is versioned. Approval applies to an exact invoice revision and frozen artifact. This is a confirmed architectural rule: delivery must use the artifact corresponding to that approved revision.
 - Editing approved content invalidates approval; a new manual approval is required before delivery.
 - Scheduled work must not bypass an invalidated approval. A pre-send eligibility check alone is insufficient; delivery implementation is blocked pending the concurrency decisions below.
@@ -101,6 +102,12 @@ Delivery implementation is blocked until all three of these policies are defined
 - How approval invalidation interacts with sending.
 
 Do not infer a final concurrency policy from the outbox, worker, or pre-send eligibility check. Those mechanisms alone do not resolve the send/edit race.
+
+Approval implementation is also blocked until a frozen artifact has a stable identity and
+the application can bind an immutable invoice revision and that exact artifact in one
+valid approval operation. Approving revision content alone would weaken the confirmed
+approval invariant. Duplicate-approval/idempotency behavior remains unresolved until
+that operation and artifact lifecycle are defined.
 
 | Decision | Questions to settle before implementation |
 | --- | --- |

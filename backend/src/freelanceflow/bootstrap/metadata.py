@@ -2,6 +2,7 @@
 
 from freelanceflow.modules.billing.adapters.models import (
     InvoiceAllocationRow,
+    InvoiceDraftHeadRow,
     InvoiceDraftRow,
     InvoiceLineRow,
     RateAgreementRow,
@@ -17,6 +18,7 @@ __all__ = [
     "TaskRow",
     "RateAgreementRow",
     "InvoiceDraftRow",
+    "InvoiceDraftHeadRow",
     "InvoiceLineRow",
     "InvoiceAllocationRow",
     "TimeEntryRow",

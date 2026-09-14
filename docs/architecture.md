@@ -89,6 +89,11 @@ Drafts may be generated from eligible TimeEntries without individually approving
 
 Billing resolves effective rates, applies pricing-specific segmentation, calculates exact amounts, and records allocations and invoice snapshots. Calendar events never directly generate invoice lines.
 
+InvoiceDraft modifications insert complete immutable revisions. A logical invoice head is
+locked transactionally when allocating its next monotonically increasing revision number;
+existing revision rows, lines, and allocations are never updated. The head pointer is
+coordination metadata only and does not replace historical content.
+
 Approval applies to an exact invoice revision and frozen artifact. Delivery must use the artifact corresponding to that approved revision. Editing approved content invalidates approval. Sent content and its artifact remain immutable; delivery history can continue to accumulate separately.
 
 Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits while delivery is in progress, and the interaction of approval invalidation with sending are defined. Rechecking approval alone does not resolve the send/edit race. No final concurrency policy is chosen here.

@@ -7,7 +7,9 @@ Issue #9 adds synchronous SQLAlchemy 2.x and psycopg 3 adapters. Domain dataclas
 Core tables are `clients`, `projects`, `tasks`, `rate_agreements`, and `time_entries`.
 Issue #22 adds `invoice_drafts`, `invoice_lines`, and `invoice_allocations` as immutable
 historical snapshots. UUIDs identify drafts and lines; a draft uses `(id, revision)` as
-its key so later revisions can be inserted without overwriting prior content. Every
+its key so later revisions can be inserted without overwriting prior content. Revision
+`0004` adds and backfills `invoice_draft_heads`; its `current_revision` row is locked with
+PostgreSQL `SELECT ... FOR UPDATE` before a new revision number is allocated. Every
 workspace-owned root carries `workspace_id`; there is no speculative Workspace table.
 Composite foreign keys enforce nested invoice ownership and ordering, while allocations
 deliberately retain source TimeEntry and RateAgreement UUIDs without foreign keys to
@@ -33,8 +35,24 @@ revision, rates, exact/rounded amounts, subtotal, or total. One application tran
 loads workspace-scoped source objects and rates, invokes deterministic pricing and draft
 construction, assigns UUIDs and revision 1, and flushes the complete snapshot. GET and
 list reconstruct only from invoice snapshot tables, ordered by stored positions. Missing
-and cross-workspace drafts share the same HTTP 404 response. Draft mutation, persistence
-of later revisions, approval, tax, numbering, artifacts, and delivery remain out of scope.
+and cross-workspace drafts share the same HTTP 404 response. In-place draft mutation,
+approval, tax, numbering, artifacts, and delivery remain out of scope.
+
+Issue #24 adds explicit revision operations without an in-place update path:
+
+- `POST /workspaces/{workspace_id}/invoice-drafts/{invoice_id}/revisions` rebuilds a
+  complete validated snapshot using the locked next revision number.
+- `GET /workspaces/{workspace_id}/invoice-drafts/{invoice_id}/revisions` returns history
+  in ascending revision order.
+- `GET /workspaces/{workspace_id}/invoice-drafts/{invoice_id}/revisions/{revision}`
+  returns one exact historical revision; the existing single-draft GET returns the head.
+
+The head enforces stable workspace, client, currency, and precision through a composite
+foreign key. Revision creation and advancing `current_revision` share the application-owned
+transaction, so rollback leaves neither partial nested rows nor a skipped head revision.
+Approval is deliberately not persisted: confirmed architecture requires an approval to
+identify both the exact revision and its frozen delivery artifact, and no artifact identity
+model exists yet. Duplicate approval behavior remains unresolved with that boundary.
 
 ## API and transactions
 

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from freelanceflow.modules.billing.adapters.models import (
     InvoiceAllocationRow,
+    InvoiceDraftHeadRow,
     InvoiceDraftRow,
     InvoiceLineRow,
 )
@@ -84,6 +85,24 @@ class InvoiceDraftRepository:
         ]
 
     def add(self, value: InvoiceDraft) -> None:
+        if value.revision != 1:
+            raise ValueError("A new logical InvoiceDraft must start at revision 1")
+        if value.workspace_id != self.workspace_id:
+            raise ValueError("Workspace mismatch")
+        self.session.add(
+            InvoiceDraftHeadRow(
+                id=value.id,
+                workspace_id=value.workspace_id,
+                client_id=value.client_id,
+                currency=value.currency.code,
+                currency_decimal_places=value.currency.decimal_places,
+                current_revision=1,
+            )
+        )
+        self.session.flush()
+        self._add_snapshot(value)
+
+    def _add_snapshot(self, value: InvoiceDraft) -> None:
         if value.workspace_id != self.workspace_id:
             raise ValueError("Workspace mismatch")
         self.session.add(
@@ -101,6 +120,9 @@ class InvoiceDraftRepository:
             )
         )
         self.session.flush()
+        self._add_children(value)
+
+    def _add_children(self, value: InvoiceDraft) -> None:
         for line_position, line in enumerate(value.lines):
             first = line.allocations[0].priced_segment
             source = first.segment.source_time_entry
@@ -166,6 +188,43 @@ class InvoiceDraftRepository:
                         exact_amount_denominator=Decimal(priced.exact_amount.denominator),
                     )
                 )
+        self.session.flush()
+
+    def get_for_revision(self, entity_id: UUID) -> InvoiceDraft | None:
+        head = self.session.scalar(
+            select(InvoiceDraftHeadRow)
+            .where(
+                InvoiceDraftHeadRow.id == entity_id,
+                InvoiceDraftHeadRow.workspace_id == self.workspace_id,
+            )
+            .with_for_update()
+        )
+        if head is None:
+            return None
+        return self._get_revision(head.id, head.current_revision)
+
+    def add_revision(self, value: InvoiceDraft) -> None:
+        head = self.session.scalar(
+            select(InvoiceDraftHeadRow)
+            .where(
+                InvoiceDraftHeadRow.id == value.id,
+                InvoiceDraftHeadRow.workspace_id == self.workspace_id,
+            )
+            .with_for_update()
+        )
+        if head is None:
+            raise ValueError("InvoiceDraft head is unavailable in this workspace")
+        if (
+            value.workspace_id != head.workspace_id
+            or value.client_id != head.client_id
+            or value.currency.code != head.currency
+            or value.currency.decimal_places != head.currency_decimal_places
+        ):
+            raise ValueError("InvoiceDraft logical identity cannot change across revisions")
+        if value.revision != head.current_revision + 1:
+            raise ValueError("InvoiceDraft revision is not the next locked revision")
+        self._add_snapshot(value)
+        head.current_revision = value.revision
         self.session.flush()
 
     def _restore_line(self, row: InvoiceLineRow) -> InvoiceLine:
@@ -294,22 +353,60 @@ class InvoiceDraftRepository:
             total=RoundedMoneyAmount(currency, _integer(row.total_minor_units)),
         )
 
-    def get(self, entity_id: UUID) -> InvoiceDraft | None:
+    def _get_revision(self, entity_id: UUID, revision: int) -> InvoiceDraft | None:
         row = self.session.scalar(
+            select(InvoiceDraftRow)
+            .where(
+                InvoiceDraftRow.id == entity_id,
+                InvoiceDraftRow.revision == revision,
+                InvoiceDraftRow.workspace_id == self.workspace_id,
+            )
+        )
+        return self._restore_draft(row) if row is not None else None
+
+    def get(self, entity_id: UUID) -> InvoiceDraft | None:
+        head = self.session.scalar(
+            select(InvoiceDraftHeadRow).where(
+                InvoiceDraftHeadRow.id == entity_id,
+                InvoiceDraftHeadRow.workspace_id == self.workspace_id,
+            )
+        )
+        if head is None:
+            return None
+        return self._get_revision(head.id, head.current_revision)
+
+    def get_revision(self, entity_id: UUID, revision: int) -> InvoiceDraft | None:
+        return self._get_revision(entity_id, revision)
+
+    def list_revisions(self, entity_id: UUID) -> list[InvoiceDraft] | None:
+        head = self.session.scalar(
+            select(InvoiceDraftHeadRow).where(
+                InvoiceDraftHeadRow.id == entity_id,
+                InvoiceDraftHeadRow.workspace_id == self.workspace_id,
+            )
+        )
+        if head is None:
+            return None
+        rows = self.session.scalars(
             select(InvoiceDraftRow)
             .where(
                 InvoiceDraftRow.id == entity_id,
                 InvoiceDraftRow.workspace_id == self.workspace_id,
             )
-            .order_by(InvoiceDraftRow.revision.desc())
-            .limit(1)
-        )
-        return self._restore_draft(row) if row is not None else None
-
-    def list(self) -> list[InvoiceDraft]:
-        rows = self.session.scalars(
-            select(InvoiceDraftRow)
-            .where(InvoiceDraftRow.workspace_id == self.workspace_id)
-            .order_by(InvoiceDraftRow.id, InvoiceDraftRow.revision)
+            .order_by(InvoiceDraftRow.revision)
         )
         return [self._restore_draft(row) for row in rows]
+
+    def list(self) -> list[InvoiceDraft]:
+        heads = self.session.scalars(
+            select(InvoiceDraftHeadRow)
+            .where(InvoiceDraftHeadRow.workspace_id == self.workspace_id)
+            .order_by(InvoiceDraftHeadRow.id)
+        )
+        drafts: list[InvoiceDraft] = []
+        for head in heads:
+            draft = self._get_revision(head.id, head.current_revision)
+            if draft is None:
+                raise ValueError("InvoiceDraft head references a missing revision")
+            drafts.append(draft)
+        return drafts
