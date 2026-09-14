@@ -94,6 +94,12 @@ locked transactionally when allocating its next monotonically increasing revisio
 existing revision rows, lines, and allocations are never updated. The head pointer is
 coordination metadata only and does not replace historical content.
 
+Frozen invoice artifacts are immutable PostgreSQL `BYTEA` records bound by foreign key
+to one exact `(invoice ID, revision, workspace)` snapshot. The application generates the
+artifact UUID and creation time and derives a lowercase hexadecimal SHA-256 digest and
+exact byte size from the payload. Metadata retrieval is separate from binary retrieval;
+there is no mutable current-artifact pointer.
+
 Approval applies to an exact invoice revision and frozen artifact. Delivery must use the artifact corresponding to that approved revision. Editing approved content invalidates approval. Sent content and its artifact remain immutable; delivery history can continue to accumulate separately.
 
 Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits while delivery is in progress, and the interaction of approval invalidation with sending are defined. Rechecking approval alone does not resolve the send/edit race. No final concurrency policy is chosen here.
@@ -119,6 +125,6 @@ External operations must be idempotent. A provider timeout can leave the result 
 
 ## External adapters
 
-Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering/artifact storage. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports.
+Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering. Frozen artifact bytes use PostgreSQL `BYTEA` for the MVP. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports.
 
-Exact libraries, email provider, worker mechanism, and artifact storage are unresolved implementation choices. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
+Exact rendering libraries, email provider, and worker mechanism remain unresolved implementation choices. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.

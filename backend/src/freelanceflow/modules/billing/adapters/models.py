@@ -8,8 +8,10 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Integer,
+    LargeBinary,
     Numeric,
     PrimaryKeyConstraint,
+    String,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -68,6 +70,12 @@ class InvoiceDraftRow(Base):
             "client_id",
             "currency",
             "currency_decimal_places",
+        ),
+        UniqueConstraint(
+            "id",
+            "revision",
+            "workspace_id",
+            name="uq_invoice_drafts_exact_revision_workspace",
         ),
         CheckConstraint("revision > 0", name="positive_revision"),
         CheckConstraint(
@@ -264,3 +272,41 @@ class InvoiceAllocationRow(Base):
     duration_microseconds: Mapped[int] = mapped_column(BigInteger)
     exact_amount_numerator: Mapped[Decimal] = mapped_column(Numeric())
     exact_amount_denominator: Mapped[Decimal] = mapped_column(Numeric())
+
+
+class InvoiceArtifactRow(Base):
+    __tablename__ = "invoice_artifacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["invoice_draft_id", "invoice_revision", "workspace_id"],
+            [
+                "invoice_drafts.id",
+                "invoice_drafts.revision",
+                "invoice_drafts.workspace_id",
+            ],
+        ),
+        CheckConstraint("invoice_revision > 0", name="positive_invoice_revision"),
+        CheckConstraint(
+            "length(btrim(media_type, U&'"
+            r"\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020"
+            r"\0085\00A0\1680\2000\2001\2002\2003\2004\2005"
+            r"\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000"
+            "')) > 0",
+            name="nonblank_media_type",
+        ),
+        CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="canonical_sha256"),
+        CheckConstraint(
+            "byte_size > 0 AND octet_length(content) = byte_size",
+            name="consistent_nonempty_content_size",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[UUID]
+    invoice_draft_id: Mapped[UUID]
+    invoice_revision: Mapped[int] = mapped_column(Integer)
+    media_type: Mapped[str]
+    sha256: Mapped[str] = mapped_column(String(64))
+    byte_size: Mapped[int] = mapped_column(BigInteger)
+    content: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

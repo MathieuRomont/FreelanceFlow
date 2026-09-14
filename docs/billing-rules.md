@@ -62,6 +62,8 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - Each line retains an allocation to every source priced segment. Duplicate source-segment allocations and overlapping allocations from the same TimeEntry are invalid because they would bill the same source interval twice. Overlapping intervals from distinct TimeEntries remain permitted; the broader work-overlap policy is unresolved.
 - Preserve the time provenance, applied rates, quantities, amounts, and customer/issuer details needed to explain historical invoice content.
 - Persisted InvoiceDraft content is immutable. A modification creates a complete new revision under the same logical invoice ID, workspace, client, and currency. Revision numbers increase monotonically from 1; prior revisions remain unchanged and reconstructible.
+- A frozen InvoiceArtifact belongs to one workspace and one exact persisted InvoiceDraft revision. Its application-generated UUID, nonblank media type, exact nonempty byte payload, creation instant, exact byte size, and lowercase hexadecimal SHA-256 digest are immutable. The server derives the digest and size from the bytes; later invoice revisions never alter the binding.
+- Frozen artifact bytes are stored in PostgreSQL `BYTEA` for the MVP. Metadata and exact binary content are retrieved separately, and a stored media type does not assert that the bytes are a valid document of that type. There is no mutable latest/current artifact pointer.
 - Approved invoice content is versioned. Approval applies to an exact invoice revision and frozen artifact. This is a confirmed architectural rule: delivery must use the artifact corresponding to that approved revision.
 - Editing approved content invalidates approval; a new manual approval is required before delivery.
 - Scheduled work must not bypass an invalidated approval. A pre-send eligibility check alone is insufficient; delivery implementation is blocked pending the concurrency decisions below.
@@ -103,11 +105,10 @@ Delivery implementation is blocked until all three of these policies are defined
 
 Do not infer a final concurrency policy from the outbox, worker, or pre-send eligibility check. Those mechanisms alone do not resolve the send/edit race.
 
-Approval implementation is also blocked until a frozen artifact has a stable identity and
-the application can bind an immutable invoice revision and that exact artifact in one
-valid approval operation. Approving revision content alone would weaken the confirmed
-approval invariant. Duplicate-approval/idempotency behavior remains unresolved until
-that operation and artifact lifecycle are defined.
+Frozen artifacts now provide the stable identity needed by a future approval operation.
+That operation must atomically bind an immutable invoice revision and its exact artifact;
+approving revision content alone would weaken the confirmed invariant.
+Duplicate-approval/idempotency behavior remains unresolved.
 
 | Decision | Questions to settle before implementation |
 | --- | --- |
@@ -129,6 +130,7 @@ that operation and artifact lifecycle are defined.
 | Corrections | Which correction documents and links are required? How are credits or adjustments allocated without rewriting sent content? |
 | Negative invoice amounts | Rate resolution and exact pricing do not reject negative rates, but their meaning on an InvoiceDraft and all credit-note behavior remain UNRESOLVED. Do not treat `ROUND_HALF_UP` for ordinary positive invoice lines as a legal negative-invoice or credit-note policy. |
 | Retention and deletion | What source data can be deleted while preserving required invoice provenance, audit records, and protected personal data? |
+| Artifact request idempotency | Repeating a freeze request currently creates another immutable artifact, even for identical bytes; identical bytes have the same SHA-256 but distinct UUIDs. Define an explicit operation identity before changing this behavior. Global content deduplication is not implied. |
 
 ## Acceptance examples to define
 
