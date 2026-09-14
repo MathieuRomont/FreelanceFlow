@@ -68,7 +68,11 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - One immutable approval may exist per exact invoice revision. It snapshots the artifact UUID and lowercase SHA-256 and is valid only when both match an artifact already bound to that revision and workspace. No approving actor is recorded before authentication exists.
 - Repeating approval of the same exact `(invoice ID, revision, artifact ID, artifact SHA-256)` target returns the original approval unchanged. This target-specific behavior does not establish a general request-idempotency framework. Attempting to approve a different artifact for an already-approved revision is a conflict and cannot revoke or replace history.
 - Creating or editing content produces a later revision that is unapproved; approval is never inherited. Historical approval of an earlier revision remains intact.
-- Scheduled work must not bypass an invalidated approval. A pre-send eligibility check alone is insufficient; delivery implementation is blocked pending the concurrency decisions below.
+- A durable logical delivery may be requested only for one existing immutable approval and its exact `(workspace, invoice ID, revision, artifact ID, artifact SHA-256)` target. One logical delivery exists per approval; repeating that exact request returns the existing record unchanged.
+- Delivery state is `pending`, `in_progress`, or terminal `sent`. A PostgreSQL row lock with `SKIP LOCKED` atomically claims a pending delivery and creates one open attempt with an application-generated claim token. Only that active token may record its outcome, and at most one attempt may be open for a delivery.
+- A definitive failed attempt is retained immutably and returns the logical delivery to `pending`; a later retry creates a new ordered attempt. A successful attempt makes the delivery terminal and it cannot be reclaimed, failed, reopened, replaced, or retargeted.
+- Creating a later InvoiceDraft revision does not edit or invalidate an earlier immutable approval or delivery. It requires its own artifact, approval, and delivery. This slice has no approval revocation or mutable recipient/schedule data.
+- A logical delivery UUID is stable across retries and is the candidate operation identity for a future provider adapter. It does not by itself guarantee provider idempotency.
 - Sent invoice content and its delivered artifact remain immutable. Later changes to clients, rates, or source time must not rewrite them.
 - Corrections to sent invoices must use separate linked records; the legal document/process is unresolved.
 
@@ -93,19 +97,18 @@ This document is the authoritative source for whether a business rule is CONFIRM
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
 
 The pure Invoice Draft scope does not implement VAT or tax calculation, legal invoice
-numbering, negative-invoice or credit-note semantics, delivery, corrections,
+numbering, negative-invoice or credit-note semantics, external delivery, corrections,
 PDF rendering, billing-period membership, or automatic line descriptions.
 Their rules remain unresolved or belong to later explicitly scoped work.
 
 ## UNRESOLVED decisions
 
-Delivery implementation is blocked until all three of these policies are defined:
-
-- Atomic claiming of an approved invoice for sending.
-- What edits are allowed while delivery is in progress.
-- How approval invalidation interacts with sending.
-
-Do not infer a final concurrency policy from the outbox, worker, or pre-send eligibility check. Those mechanisms alone do not resolve the send/edit race.
+The durable local delivery state machine confirms atomic claiming and immutable target
+binding, but it does not make the external email action atomic with PostgreSQL. A crash after
+provider acceptance and before the success transaction commits leaves an `in_progress`
+attempt with an uncertain outcome. Do not reclaim or retry it automatically until provider
+idempotency/reconciliation and abandoned-claim lease policy are confirmed. No lease duration
+is selected by this implementation.
 
 Invoice approval now binds the immutable revision and exact artifact atomically. Revocation,
 replacement, and any actor identity remain undefined and must not be inferred.
@@ -125,7 +128,8 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
 | Tax and legal scope | What is the launch jurisdiction? Which tax modes, required invoice fields, numbering rules, and retention periods apply? These require separate validation. |
 | Numbering and dates | When is an invoice number assigned? How are numbering scope, issue dates, due dates, and voided numbers handled? |
-| Approval and delivery edits | Define atomic claiming for sending, allowed edits during delivery, and approval invalidation during sending before implementing delivery. Do changes to recipients, schedule, or email text require new approval? |
+| Delivery request details | Recipients, schedule, email text, and whether changing any of them requires a new approval or delivery are not modeled yet. Immutable invoice revision/artifact content cannot be edited in place. |
+| Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which provider idempotency or reconciliation capability prevents duplicate sends after an uncertain outcome? The stable delivery UUID is available, but exactly-once delivery is not claimed. |
 | Meaning of sent | Does sent mean provider acceptance? How are delivery confirmation, bounce, unknown outcomes, cancellation, and deliberate resend represented? |
 | Corrections | Which correction documents and links are required? How are credits or adjustments allocated without rewriting sent content? |
 | Negative invoice amounts | Rate resolution and exact pricing do not reject negative rates, but their meaning on an InvoiceDraft and all credit-note behavior remain UNRESOLVED. Do not treat `ROUND_HALF_UP` for ordinary positive invoice lines as a legal negative-invoice or credit-note policy. |

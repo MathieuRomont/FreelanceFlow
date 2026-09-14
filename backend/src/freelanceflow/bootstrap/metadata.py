@@ -10,6 +10,10 @@ from freelanceflow.modules.billing.adapters.models import (
     RateAgreementRow,
 )
 from freelanceflow.modules.clients.adapters.models import ClientRow, ProjectRow, TaskRow
+from freelanceflow.modules.delivery.adapters.models import (
+    InvoiceDeliveryAttemptRow,
+    InvoiceDeliveryRow,
+)
 from freelanceflow.modules.time_tracking.adapters.models import TimeEntryRow
 from freelanceflow.shared.persistence import Base
 
@@ -21,6 +25,8 @@ __all__ = [
     "RateAgreementRow",
     "InvoiceDraftRow",
     "InvoiceDraftHeadRow",
+    "InvoiceDeliveryRow",
+    "InvoiceDeliveryAttemptRow",
     "InvoiceLineRow",
     "InvoiceAllocationRow",
     "InvoiceApprovalRow",

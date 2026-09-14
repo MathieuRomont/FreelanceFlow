@@ -328,6 +328,15 @@ class InvoiceApprovalRow(Base):
             "invoice_revision",
             name="uq_invoice_approvals_exact_revision",
         ),
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "invoice_draft_id",
+            "invoice_revision",
+            "artifact_id",
+            "artifact_sha256",
+            name="uq_invoice_approvals_delivery_target",
+        ),
         ForeignKeyConstraint(
             ["invoice_draft_id", "invoice_revision", "workspace_id"],
             [
