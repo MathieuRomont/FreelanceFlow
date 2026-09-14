@@ -6,8 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from freelanceflow.modules.billing.adapters.models import RateAgreementRow
+from freelanceflow.modules.billing.application.rate_agreements import IdentifiedRateAgreement
 from freelanceflow.modules.billing.domain import RateAgreement
 from freelanceflow.modules.clients.application.catalog import ClientCatalog
+from freelanceflow.modules.clients.domain import Client, Project
 
 
 class RateAgreementRepository:
@@ -33,6 +35,12 @@ class RateAgreementRepository:
         )
         self.session.flush()
 
+    def get_client(self, entity_id: UUID) -> Client | None:
+        return self.clients.get_client(entity_id)
+
+    def get_project(self, entity_id: UUID) -> Project | None:
+        return self.clients.get_project(entity_id)
+
     def get(self, agreement_id: UUID) -> RateAgreement | None:
         row = self.session.scalar(
             select(RateAgreementRow).where(
@@ -49,3 +57,16 @@ class RateAgreementRepository:
         return RateAgreement(
             client, row.hourly_amount, row.currency, row.valid_from, row.valid_until, project
         )
+
+    def list(self) -> list[IdentifiedRateAgreement]:
+        identifiers = self.session.scalars(
+            select(RateAgreementRow.id)
+            .where(RateAgreementRow.workspace_id == self.workspace_id)
+            .order_by(RateAgreementRow.id)
+        )
+        agreements: list[IdentifiedRateAgreement] = []
+        for agreement_id in identifiers:
+            agreement = self.get(agreement_id)
+            assert agreement is not None
+            agreements.append(IdentifiedRateAgreement(agreement_id, agreement))
+        return agreements
