@@ -25,7 +25,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | InvoiceLine | Exact duration, applied hourly rate and RateAgreement identity, exact rational amount, rounded integer minor-unit amount, and source allocations | Caller-grouped compatible segments are summed exactly and rounded once using the confirmed policy; snapshots calculations rather than reading mutable current rates |
 | InvoiceAllocation | Association between a billed TimeEntry segment and an invoice line, including allocated interval/quantity and provenance | Prevents duplicate billing of the same time; traces a line back to allocated work in the invoice workspace and client, with compatible project/task relationships and invoice currency/rate context; reservation/release policy remains unresolved |
 | InvoiceArtifact | Application-generated identity, exact InvoiceDraft revision identity, media type, immutable bytes, exact byte size, lowercase hexadecimal SHA-256 digest, creation instant | Belongs to one workspace and one exact persisted revision; content-derived size and digest are server-authoritative; later revisions never rebind it |
-| InvoiceApproval | Approving freelancer, timestamp, invoice content version, artifact identity | Authorizes an exact invoice revision and frozen artifact; delivery must use the artifact corresponding to that revision; retained as history when later content changes invalidate it |
+| InvoiceApproval | Application-generated identity, workspace, exact invoice ID/revision, exact artifact ID/SHA-256 snapshot, approval timestamp | Immutable and unique per invoice revision; no actor is recorded before authentication exists; later revisions do not inherit it and a different artifact cannot replace it |
 | DeliveryJob | Invoice version/artifact, recipients, scheduled instant, operation identity, job status | Requires valid approval before sending; must not send stale content; rescheduling and recipient-change rules need definition |
 | DeliveryAttempt | Job reference, attempt time, provider request/message identifiers, outcome, sanitized error metadata | Distinguishes accepted, failed, and uncertain outcomes; attempts do not mutate sent invoice content |
 | AuditEvent | Actor, timestamp, entity/version, action, relevant change information, correlation identifier | Append-only; records important changes without secrets or unnecessary sensitive source payloads |
@@ -65,7 +65,9 @@ invoice identity; later modifications preserve its workspace, client, and curren
 insert monotonically increasing revisions without overwriting history. A current-revision
 pointer is concurrency metadata, not mutable invoice content. Frozen artifacts provide a
 stable identity for exact revision bytes. No approval record is valid without both that
-exact revision and its artifact identity; approval remains a separately scoped operation.
+exact revision and its artifact identity. Repeating approval of that same exact target
+returns the original immutable record; approving another artifact for the revision is a
+conflict. Revocation and replacement are not defined.
 
 Issue #11 confirms that Client requires a nonblank name. Empty and Unicode
 whitespace-only names are rejected; supplied nonblank names are preserved without

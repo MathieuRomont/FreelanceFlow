@@ -65,7 +65,9 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - A frozen InvoiceArtifact belongs to one workspace and one exact persisted InvoiceDraft revision. Its application-generated UUID, nonblank media type, exact nonempty byte payload, creation instant, exact byte size, and lowercase hexadecimal SHA-256 digest are immutable. The server derives the digest and size from the bytes; later invoice revisions never alter the binding.
 - Frozen artifact bytes are stored in PostgreSQL `BYTEA` for the MVP. Metadata and exact binary content are retrieved separately, and a stored media type does not assert that the bytes are a valid document of that type. There is no mutable latest/current artifact pointer.
 - Approved invoice content is versioned. Approval applies to an exact invoice revision and frozen artifact. This is a confirmed architectural rule: delivery must use the artifact corresponding to that approved revision.
-- Editing approved content invalidates approval; a new manual approval is required before delivery.
+- One immutable approval may exist per exact invoice revision. It snapshots the artifact UUID and lowercase SHA-256 and is valid only when both match an artifact already bound to that revision and workspace. No approving actor is recorded before authentication exists.
+- Repeating approval of the same exact `(invoice ID, revision, artifact ID, artifact SHA-256)` target returns the original approval unchanged. This target-specific behavior does not establish a general request-idempotency framework. Attempting to approve a different artifact for an already-approved revision is a conflict and cannot revoke or replace history.
+- Creating or editing content produces a later revision that is unapproved; approval is never inherited. Historical approval of an earlier revision remains intact.
 - Scheduled work must not bypass an invalidated approval. A pre-send eligibility check alone is insufficient; delivery implementation is blocked pending the concurrency decisions below.
 - Sent invoice content and its delivered artifact remain immutable. Later changes to clients, rates, or source time must not rewrite them.
 - Corrections to sent invoices must use separate linked records; the legal document/process is unresolved.
@@ -91,7 +93,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
 
 The pure Invoice Draft scope does not implement VAT or tax calculation, legal invoice
-numbering, negative-invoice or credit-note semantics, approval, delivery, corrections,
+numbering, negative-invoice or credit-note semantics, delivery, corrections,
 PDF rendering, billing-period membership, or automatic line descriptions.
 Their rules remain unresolved or belong to later explicitly scoped work.
 
@@ -105,10 +107,8 @@ Delivery implementation is blocked until all three of these policies are defined
 
 Do not infer a final concurrency policy from the outbox, worker, or pre-send eligibility check. Those mechanisms alone do not resolve the send/edit race.
 
-Frozen artifacts now provide the stable identity needed by a future approval operation.
-That operation must atomically bind an immutable invoice revision and its exact artifact;
-approving revision content alone would weaken the confirmed invariant.
-Duplicate-approval/idempotency behavior remains unresolved.
+Invoice approval now binds the immutable revision and exact artifact atomically. Revocation,
+replacement, and any actor identity remain undefined and must not be inferred.
 
 | Decision | Questions to settle before implementation |
 | --- | --- |
