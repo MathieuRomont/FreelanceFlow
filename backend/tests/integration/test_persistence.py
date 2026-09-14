@@ -309,6 +309,8 @@ def test_migration_cycle() -> None:
             "invoice_allocations",
             "invoice_artifacts",
             "invoice_approvals",
+            "invoice_deliveries",
+            "invoice_delivery_attempts",
             "alembic_version",
         }
         migrate(engine, "check")

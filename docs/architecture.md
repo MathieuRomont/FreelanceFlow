@@ -107,15 +107,25 @@ existing approval; a different artifact conflicts and cannot replace it. Later r
 remain unapproved. Delivery must use the artifact corresponding to the approved revision.
 Sent content and its artifact remain immutable; delivery history can accumulate separately.
 
-Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits while delivery is in progress, and the interaction of approval invalidation with sending are defined. Rechecking approval alone does not resolve the send/edit race. No final concurrency policy is chosen here.
+A durable logical delivery in the Delivery module is bound by foreign key to one immutable approval and its exact
+revision, artifact UUID, and artifact SHA-256 snapshot. Repeating a request for the same
+approval returns that delivery. Workers atomically claim pending deliveries with PostgreSQL
+row locking and `SKIP LOCKED`; each claim creates a new immutable attempt identity that is
+required to record failure or success. A successful delivery is terminal. A later invoice
+revision is a separate immutable snapshot and cannot alter the historical delivery target.
 
 ## Worker and external operations
 
 A background worker handles calendar synchronization, document work, and scheduled email delivery through application use cases. It uses persisted jobs, retry metadata, and stable operation identifiers.
 
-For the MVP, prefer PostgreSQL-backed durable jobs and a simple transactional outbox if needed. Do not introduce Kafka, RabbitMQ, generic event buses, event sourcing, or microservices by default. Approval/scheduling state and the corresponding durable work request must be committed consistently. Workers record attempts and outcomes; the delivery claiming and concurrency policy remains an implementation blocker as described above.
+For the MVP, prefer PostgreSQL-backed durable jobs and a simple transactional outbox if needed. Do not introduce Kafka, RabbitMQ, generic event buses, event sourcing, or microservices by default. Approval state and the corresponding durable delivery request are committed consistently. Workers record attempts and outcomes. Automatic recovery of an abandoned claim remains blocked until a lease/timeout policy is confirmed.
 
-External operations must be idempotent. A provider timeout can leave the result uncertain: reconcile using persisted identifiers and provider capabilities before retrying. Do not assume a local transaction can make a remote send atomic.
+External operations must be idempotent. The stable logical delivery UUID is available as a
+future provider operation key, but this only prevents duplicates when the selected provider
+honors idempotency or supports reconciliation. A provider timeout or a crash after provider
+acceptance but before the database success commit leaves the attempt uncertain and in
+progress; it must not be retried automatically. Do not assume a local transaction can make
+a remote send atomic or claim exactly-once delivery.
 
 ## Database boundaries
 
