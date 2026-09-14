@@ -89,7 +89,7 @@ Document format and rendering details remain open; approval of an exact revision
 
 The pure Invoice Draft scope does not implement VAT or tax calculation, legal invoice
 numbering, negative-invoice or credit-note semantics, approval, delivery, corrections,
-PDF rendering, persistence, billing-period membership, or automatic line descriptions.
+PDF rendering, billing-period membership, or automatic line descriptions.
 Their rules remain unresolved or belong to later explicitly scoped work.
 
 ## UNRESOLVED decisions

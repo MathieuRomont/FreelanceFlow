@@ -303,6 +303,9 @@ def test_migration_cycle() -> None:
             "tasks",
             "rate_agreements",
             "time_entries",
+            "invoice_drafts",
+            "invoice_lines",
+            "invoice_allocations",
             "alembic_version",
         }
         migrate(engine, "check")

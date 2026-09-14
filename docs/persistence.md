@@ -4,11 +4,37 @@ Issue #9 adds synchronous SQLAlchemy 2.x and psycopg 3 adapters. Domain dataclas
 
 ## Schema and ownership
 
-Tables are `clients`, `projects`, `tasks`, `rate_agreements`, and `time_entries`. UUID primary keys identify records. Every table carries `workspace_id`; there is no speculative Workspace table. Composite foreign keys enforce project/client, task/project, rate scope, and TimeEntry classification ownership, including workspace identity. Supporting composite unique constraints permit those foreign keys. Deletion has no cascade policy.
+Core tables are `clients`, `projects`, `tasks`, `rate_agreements`, and `time_entries`.
+Issue #22 adds `invoice_drafts`, `invoice_lines`, and `invoice_allocations` as immutable
+historical snapshots. UUIDs identify drafts and lines; a draft uses `(id, revision)` as
+its key so later revisions can be inserted without overwriting prior content. Every
+workspace-owned root carries `workspace_id`; there is no speculative Workspace table.
+Composite foreign keys enforce nested invoice ownership and ordering, while allocations
+deliberately retain source TimeEntry and RateAgreement UUIDs without foreign keys to
+mutable source rows. Deleting or changing a source row therefore cannot change or prevent
+reconstruction of a historical draft.
 
 TimeEntry checks require client/project both null or both present, task absent unless project is present, and end strictly after start. Rates require a null end date or an end strictly after the start date; finite amounts reflect existing domain validation. Required attributes are non-null. Currency validation otherwise remains in the existing domain constructor.
 
 Rates use unbounded PostgreSQL `NUMERIC` mapped to `Decimal`, without a chosen currency scale or rounding policy. PostgreSQL's native numeric size limits still apply. Validity uses `DATE`. TimeEntry instants use `TIMESTAMP WITH TIME ZONE`; mappings write UTC and separately retain each endpoint's IANA zone key when present and exact offset in microseconds. Rehydration restores IANA zones (including DST fold) or a fixed offset. Arbitrary custom tzinfo implementations retain their instant and offset, not their custom class or future transition rules. Duration is derived, never stored.
+
+Invoice rational numerators and positive denominators use unbounded `NUMERIC` columns
+with integral checks, avoiding `BIGINT` limits and preserving Python integers exactly.
+Rounded amounts are integral minor units plus a currency and precision snapshot. EUR/2
+is the only accepted MVP invoice currency policy. Explicit line and allocation positions
+define reconstruction order; PostgreSQL row order is never used. Lines snapshot ownership
+names, the complete applied-rate inputs, and derived exact/rounded results. Allocations
+snapshot original and allocated intervals with timezone context, business date, source
+billable state, source identity, and exact source amount.
+
+`POST /workspaces/{workspace_id}/invoice-drafts` accepts a client and ordered groups of
+source TimeEntry IDs plus prepared intervals/business dates. It does not accept IDs,
+revision, rates, exact/rounded amounts, subtotal, or total. One application transaction
+loads workspace-scoped source objects and rates, invokes deterministic pricing and draft
+construction, assigns UUIDs and revision 1, and flushes the complete snapshot. GET and
+list reconstruct only from invoice snapshot tables, ordered by stored positions. Missing
+and cross-workspace drafts share the same HTTP 404 response. Draft mutation, persistence
+of later revisions, approval, tax, numbering, artifacts, and delivery remain out of scope.
 
 ## API and transactions
 

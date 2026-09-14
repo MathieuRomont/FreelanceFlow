@@ -7,11 +7,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
+from freelanceflow.modules.billing.adapters.invoice_draft_transactions import (
+    SqlAlchemyInvoiceDraftTransaction,
+)
 from freelanceflow.modules.billing.adapters.transactions import (
     SqlAlchemyRateAgreementTransaction,
 )
+from freelanceflow.modules.billing.api.invoice_drafts import get_invoice_draft_service
+from freelanceflow.modules.billing.api.invoice_drafts import router as invoice_draft_router
 from freelanceflow.modules.billing.api.rate_agreements import get_rate_agreement_service
 from freelanceflow.modules.billing.api.rate_agreements import router as rate_agreement_router
+from freelanceflow.modules.billing.application.invoice_drafts import InvoiceDraftService
 from freelanceflow.modules.billing.application.rate_agreements import RateAgreementService
 from freelanceflow.modules.clients.adapters.repository import ClientRepository
 from freelanceflow.modules.clients.adapters.transactions import SqlAlchemyClientTransaction
@@ -20,6 +26,7 @@ from freelanceflow.modules.clients.api.project_tasks import router as project_ta
 from freelanceflow.modules.clients.api.routes import get_client_service, router
 from freelanceflow.modules.clients.application.clients import ClientService
 from freelanceflow.modules.clients.application.projects_tasks import ProjectTaskService
+from freelanceflow.modules.time_tracking.adapters.repository import TimeEntryRepository
 from freelanceflow.modules.time_tracking.adapters.transactions import (
     SqlAlchemyTimeEntryTransaction,
 )
@@ -47,6 +54,11 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             time_entry_service = TimeEntryService(
                 SqlAlchemyTimeEntryTransaction(configured_engine, ClientRepository)
             )
+            invoice_draft_service = InvoiceDraftService(
+                SqlAlchemyInvoiceDraftTransaction(
+                    configured_engine, ClientRepository, TimeEntryRepository
+                )
+            )
             application.dependency_overrides[get_client_service] = lambda: service
             application.dependency_overrides[get_project_task_service] = (
                 lambda: project_task_service
@@ -57,6 +69,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides[get_time_entry_service] = (
                 lambda: time_entry_service
             )
+            application.dependency_overrides[get_invoice_draft_service] = (
+                lambda: invoice_draft_service
+            )
         try:
             yield
         finally:
@@ -64,6 +79,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides.pop(get_project_task_service, None)
             application.dependency_overrides.pop(get_rate_agreement_service, None)
             application.dependency_overrides.pop(get_time_entry_service, None)
+            application.dependency_overrides.pop(get_invoice_draft_service, None)
             if owned_engine is not None:
                 owned_engine.dispose()
 
@@ -72,6 +88,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     application.include_router(project_task_router)
     application.include_router(rate_agreement_router)
     application.include_router(time_entry_router)
+    application.include_router(invoice_draft_router)
 
     @application.get("/health")
     def health() -> dict[str, str]:
