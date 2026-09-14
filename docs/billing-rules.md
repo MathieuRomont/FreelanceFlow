@@ -25,7 +25,8 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - A TimeEntry can be marked billable or non-billable; this flag does not define billing eligibility or review state.
 - Start and end must be timezone-aware instants, with end strictly after start.
 - TimeEntry duration is exact elapsed time between instants, including across daylight-saving transitions, without float conversion. The domain implementation uses `timedelta` to preserve timestamp microseconds and retains the supplied timezone context.
-- These interval rules do not settle billable-duration adjustments, rounding, breaks, daily segmentation, overlaps, all-day events, or review/approval workflows.
+- For the current MVP, raw exact `TimeEntry.duration` is the billable duration. There are no break, pause, or manual duration-adjustment rules. Future adjustments require a separately confirmed policy and must not be anticipated.
+- These interval rules do not define future duration adjustments, rounding, daily segmentation, overlaps, all-day events, or review/approval workflows.
 
 ### Manual TimeEntry classification (issue #7)
 
@@ -44,6 +45,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - If no project rate applies, resolve at client level. More than one applicable client rate is a conflict.
 - A lower-precedence conflict must not block a unique higher-precedence applicable rate.
 - Missing rates or conflicts at the highest applicable precedence level block billing of the affected time. Do not substitute zero or arbitrarily select one.
+- Pre-invoice pricing preserves the exact unrounded monetary result derived from duration microseconds and the exact Decimal hourly rate. A billing-specific rational representation may be used when the result is not a terminating Decimal. Final currency quantization and rounding remain unresolved.
 - RateAgreement validity uses half-open date intervals `[valid_from, valid_until)`: the start is inclusive, the end is exclusive, and a null end means open-ended.
 - The rate resolver receives an already-interpreted business date. Timezone and timestamp-to-business-date conversion are outside issue #3 and remain unresolved.
 - Conflicts at the selected precedence level raise an explicit domain error during resolution. This does not decide whether overlaps should be rejected globally when agreements are created or edited.
@@ -72,11 +74,10 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 - Time Tracking owns calendar/work interval duration and local-day splitting.
 - Billing owns splitting required specifically by pricing/rate-boundary changes and reuses Time Tracking duration calculations; do not duplicate duration calculations.
-- Ownership is confirmed; billing timezone conversion, billable-duration adjustments, and splitting work across rate boundaries remain unresolved below.
+- Ownership is confirmed; billing timezone conversion and splitting work across rate boundaries remain unresolved below.
 
 ## PROPOSED rules requiring confirmation
 
-- Convert exact elapsed duration to Decimal hours during billing; billing conversion remains unconfirmed.
 - Use deterministic classification suggestions initially. Ambiguous/unclassified entries remain subject to the confirmed blocking or explicit-exclusion rule.
 
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
@@ -94,9 +95,9 @@ Do not infer a final concurrency policy from the outbox, worker, or pre-send eli
 | Decision | Questions to settle before implementation |
 | --- | --- |
 | Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |
-| Duration policy | Raw TimeEntry elapsed duration and microsecond preservation are confirmed by issue #5. How does elapsed duration translate to billable duration? How are breaks recorded? |
-| Rounding | Which increment, rounding mode, and stage apply: entry, day, line, or invoice? How are tax and subtotal rounding reconciled? |
-| Rate boundaries | How are entries spanning rate changes treated? Date-range inclusivity and open-ended agreements are confirmed above. |
+| Future duration adjustments | Raw TimeEntry elapsed duration is the confirmed MVP billable duration. Any future break, pause, or manual adjustment behavior requires a new confirmed rule. |
+| Rounding | Final monetary/currency quantization remains unresolved. Which increment, rounding mode, and stage apply: segment, entry, day, line, or invoice? How are tax and subtotal rounding reconciled? |
+| Rate boundaries | Automatic pricing-boundary segmentation is blocked by the unresolved billing-timezone/business-date policy. Date-range inclusivity and open-ended agreements are confirmed above; callers may provide already-prepared segments with an explicit business date. |
 | Rate edits and validation | Resolution rejects conflicts only at the highest applicable precedence level. Whether overlapping agreements should be rejected globally at creation/edit time remains UNRESOLVED. How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
 | Time review and eligibility | What optional TimeEntry review workflow is needed? Which edits affect eligibility? When do ambiguous, unclassified, or unbillable entries block generation versus get explicitly excluded, and how is exclusion shown? Individual entry approval is not required to generate a draft. |
 | Overlap and all-day events | How are overlapping work intervals resolved? Are all-day events excluded or manually converted? |

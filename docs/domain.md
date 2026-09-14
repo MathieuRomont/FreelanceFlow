@@ -31,7 +31,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 
 Issue #5 implements Task as a category belonging to exactly one Project, carrying client and workspace ownership through that project. TimeEntry explicitly carries workspace ownership, aware start/end timestamps, a billable flag, and optional client/project/task references. Classification must form a consistent ownership chain: a project requires its selected client, and a task requires its selected project, all within the entry workspace.
 
-TimeEntry requires end strictly after start as instants. Its exact elapsed duration is a `timedelta` computed after converting both timestamps to UTC, preserving microseconds across midnight and daylight-saving transitions. Supplied timestamps retain timezone context. This is raw elapsed duration, with no billing conversion, rounding, daily splitting, overlap policy, or review/approval states.
+TimeEntry requires end strictly after start as instants. Its exact elapsed duration is a `timedelta` computed after converting both timestamps to UTC, preserving microseconds across midnight and daylight-saving transitions. Supplied timestamps retain timezone context. For the current MVP this raw elapsed duration is also billable duration. No rounding, daily splitting, overlap policy, or review/approval states are implied.
 
 Issue #7 adds explicit immutable operations: `classify_time_entry(entry, *, client, project, task=None)` assigns or replaces the complete classification; omitting Task clears any previous Task. `clear_time_entry_classification(entry)` removes all three references. Both return new entries, rerun existing validation, and preserve timestamps, elapsed duration, and billable state. These operations add no review, approval, eligibility, or automatic classification behavior.
 
@@ -49,7 +49,7 @@ Important changes → AuditEvent
 
 A CalendarEvent and a TimeEntry are separate records with separate purposes: the former represents source data; the latter represents editable work. Exact conversion cardinality and split/merge behavior are unresolved.
 
-Time Tracking owns calendar/work interval duration and local-day splitting. Billing owns additional splitting specifically required by pricing/rate changes, reusing Time Tracking duration calculations rather than duplicating them. Timezone, duration, and rate-boundary policies remain subject to `billing-rules.md`. Whether segments are persisted is an implementation choice. Invoice allocations must preserve sufficient segment identity to prevent duplicate billing regardless of that choice.
+Time Tracking owns calendar/work interval duration and local-day splitting. Billing owns additional splitting specifically required by pricing/rate changes, reusing Time Tracking duration calculations rather than duplicating them. Raw elapsed duration is the confirmed MVP billable duration; billing timezone and automatic rate-boundary segmentation remain unresolved in `billing-rules.md`. Whether segments are persisted is an implementation choice. Invoice allocations must preserve sufficient segment identity to prevent duplicate billing regardless of that choice.
 
 TimeEntries may be edited and classified. Eligible entries may generate drafts without individual approval; ambiguous, unclassified, or unbillable entries must block generation or be explicitly excluded. The freelancer reviews the resulting invoice before approval. Detailed TimeEntry review semantics remain unresolved.
 

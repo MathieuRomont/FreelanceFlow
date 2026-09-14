@@ -69,7 +69,7 @@ bootstrap → concrete composition
 
 Cross-module workflows use explicit application interfaces; a generic event bus is not a default requirement. They do not import another module's private persistence implementation. Billing consumes eligible internal TimeEntry data and never Google payloads.
 
-Time Tracking owns calendar/work interval duration and local-day splitting. Billing owns additional splitting required specifically by pricing/rate changes and reuses Time Tracking duration calculations. Do not implement duplicate duration calculations. The timezone, duration, and rate-boundary policies remain subject to the decisions in `billing-rules.md`.
+Time Tracking owns calendar/work interval duration and local-day splitting. Billing owns additional splitting required specifically by pricing/rate changes and reuses Time Tracking duration calculations. Do not implement duplicate duration calculations. Raw TimeEntry elapsed duration is the current MVP billable duration. Billing timezone and automatic rate-boundary segmentation remain subject to the decisions in `billing-rules.md`.
 
 ## Processing flow
 
