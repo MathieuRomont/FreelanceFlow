@@ -45,7 +45,10 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - If no project rate applies, resolve at client level. More than one applicable client rate is a conflict.
 - A lower-precedence conflict must not block a unique higher-precedence applicable rate.
 - Missing rates or conflicts at the highest applicable precedence level block billing of the affected time. Do not substitute zero or arbitrarily select one.
-- Pre-invoice pricing preserves the exact unrounded monetary result derived from duration microseconds and the exact Decimal hourly rate. A billing-specific rational representation may be used when the result is not a terminating Decimal. Final currency quantization and rounding remain unresolved.
+- Pre-invoice pricing preserves the exact unrounded monetary result derived from duration microseconds and the exact Decimal hourly rate. A billing-specific rational representation may be used when the result is not a terminating Decimal. The pricing engine does not perform invoice quantization; the confirmed tax-free MVP Invoice Draft policy is defined below.
+- For tax-free MVP invoice drafts, aggregate exact `PricedSegment` durations and rational amounts into caller-defined logical lines before rounding. Round exactly once per line using explicit `ROUND_HALF_UP`; this is a FreelanceFlow product/accounting policy and not an implicit Decimal-context default. Do not round individual source segments.
+- The current invoice-draft application policy supports EUR with two decimal places. Currency precision is selected from the application's supported-currency policy and snapshotted into the draft; callers cannot supply a replacement precision, unknown currencies are rejected, and two decimal places must not be inferred for currencies generally.
+- The rounded invoice subtotal is the sum of rounded line amounts. While taxes are absent, total equals subtotal. Preserve the separately summed exact pre-rounding invoice aggregate; do not independently round it and reconcile a residual against displayed lines.
 - RateAgreement validity uses half-open date intervals `[valid_from, valid_until)`: the start is inclusive, the end is exclusive, and a null end means open-ended.
 - The rate resolver receives an already-interpreted business date. Timezone and timestamp-to-business-date conversion are outside issue #3 and remain unresolved.
 - Conflicts at the selected precedence level raise an explicit domain error during resolution. This does not decide whether overlaps should be rejected globally when agreements are created or edited.
@@ -55,6 +58,8 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 - Draft invoices originate from eligible TimeEntries through billing calculations and allocations.
 - Allocated TimeEntries must belong to the same workspace and client as the invoice, have compatible project/task relationships, and match the invoice currency/rate context.
+- For the initial pure Invoice Draft domain, callers explicitly select which `PricedSegment`s form each logical line. Every segment in one line must share workspace, client, project, task, currency, RateAgreement identity, and exact hourly rate. No grouping by description, source title, date, or other presentation field is implied.
+- Each line retains an allocation to every source priced segment. Duplicate source-segment allocations and overlapping allocations from the same TimeEntry are invalid because they would bill the same source interval twice. Overlapping intervals from distinct TimeEntries remain permitted; the broader work-overlap policy is unresolved.
 - Preserve the time provenance, applied rates, quantities, amounts, and customer/issuer details needed to explain historical invoice content.
 - Approved invoice content is versioned. Approval applies to an exact invoice revision and frozen artifact. This is a confirmed architectural rule: delivery must use the artifact corresponding to that approved revision.
 - Editing approved content invalidates approval; a new manual approval is required before delivery.
@@ -82,6 +87,11 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
 
+The pure Invoice Draft scope does not implement VAT or tax calculation, legal invoice
+numbering, negative-invoice or credit-note semantics, approval, delivery, corrections,
+PDF rendering, persistence, billing-period membership, or automatic line descriptions.
+Their rules remain unresolved or belong to later explicitly scoped work.
+
 ## UNRESOLVED decisions
 
 Delivery implementation is blocked until all three of these policies are defined:
@@ -96,20 +106,21 @@ Do not infer a final concurrency policy from the outbox, worker, or pre-send eli
 | --- | --- |
 | Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |
 | Future duration adjustments | Raw TimeEntry elapsed duration is the confirmed MVP billable duration. Any future break, pause, or manual adjustment behavior requires a new confirmed rule. |
-| Rounding | Final monetary/currency quantization remains unresolved. Which increment, rounding mode, and stage apply: segment, entry, day, line, or invoice? How are tax and subtotal rounding reconciled? |
+| Tax and later monetary rounding | Tax-free MVP invoice lines use the confirmed EUR precision, line-level `ROUND_HALF_UP`, and sum-of-rounded-lines policy above. Tax calculation and its line/subtotal/total reconciliation policy remain UNRESOLVED. Other currencies require an explicitly confirmed supported precision before use. |
 | Rate boundaries | Automatic pricing-boundary segmentation is blocked by the unresolved billing-timezone/business-date policy. Date-range inclusivity and open-ended agreements are confirmed above; callers may provide already-prepared segments with an explicit business date. |
 | Rate edits and validation | Resolution rejects conflicts only at the highest applicable precedence level. Whether overlapping agreements should be rejected globally at creation/edit time remains UNRESOLVED. How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
 | Time review and eligibility | What optional TimeEntry review workflow is needed? Which edits affect eligibility? When do ambiguous, unclassified, or unbillable entries block generation versus get explicitly excluded, and how is exclusion shown? Individual entry approval is not required to generate a draft. |
 | Overlap and all-day events | How are overlapping work intervals resolved? Are all-day events excluded or manually converted? |
 | Source reconciliation | How do cancellation, deletion, recurrence changes, entry splits/merges, and edits to already billed source events behave? |
-| Billing periods and grouping | Are periods date-inclusive or half-open? Are lines grouped by task, day, project, or rate? What descriptions are shown? |
+| Billing periods and presentation grouping | Are periods date-inclusive or half-open? Billing-period metadata must not determine allocation membership yet. Caller-defined compatible segment groups are confirmed for the pure draft domain, but automatic grouping and line descriptions by task, day, project, title, or other presentation fields remain UNRESOLVED. |
 | Allocations | Do drafts reserve time? When is a reservation released? Is partial billing supported, and how are overlaps prevented transactionally? |
-| Currency | Which currencies are supported and with what precision? Are mismatches rejected or split into separate drafts? |
+| Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
 | Tax and legal scope | What is the launch jurisdiction? Which tax modes, required invoice fields, numbering rules, and retention periods apply? These require separate validation. |
 | Numbering and dates | When is an invoice number assigned? How are numbering scope, issue dates, due dates, and voided numbers handled? |
 | Approval and delivery edits | Define atomic claiming for sending, allowed edits during delivery, and approval invalidation during sending before implementing delivery. Do changes to recipients, schedule, or email text require new approval? |
 | Meaning of sent | Does sent mean provider acceptance? How are delivery confirmation, bounce, unknown outcomes, cancellation, and deliberate resend represented? |
 | Corrections | Which correction documents and links are required? How are credits or adjustments allocated without rewriting sent content? |
+| Negative invoice amounts | Rate resolution and exact pricing do not reject negative rates, but their meaning on an InvoiceDraft and all credit-note behavior remain UNRESOLVED. Do not treat `ROUND_HALF_UP` for ordinary positive invoice lines as a legal negative-invoice or credit-note policy. |
 | Retention and deletion | What source data can be deleted while preserving required invoice provenance, audit records, and protected personal data? |
 
 ## Acceptance examples to define
