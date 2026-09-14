@@ -317,17 +317,20 @@ def test_claim_rollback_failure_retry_stale_token_and_terminal_sent(
             workspace_id=workspace_id,
             delivery_id=delivery_id,
             attempt_id=first_token,
+            provider_message_id="provider-message-stale",
         )
 
     sent = service.record_sent(
         workspace_id=workspace_id,
         delivery_id=delivery_id,
         attempt_id=second_token,
+        provider_message_id="provider-message-accepted",
     )
     assert sent.state is InvoiceDeliveryState.SENT
     assert sent.sent_at is not None
     assert sent.attempts[0] == failed.attempts[0]
     assert sent.attempts[1].outcome == "sent"
+    assert sent.attempts[1].provider_message_id == "provider-message-accepted"
     assert service.claim_next(workspace_id) is None
     with pytest.raises(InvalidInvoiceDeliveryTransitionError, match="stale"):
         service.record_failure(

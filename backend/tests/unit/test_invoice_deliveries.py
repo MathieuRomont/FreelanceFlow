@@ -49,7 +49,9 @@ def test_delivery_snapshots_exact_approval_target_and_stable_operation_key() -> 
     assert delivery.artifact_id == approval.artifact_id
     assert delivery.artifact_sha256 == approval.artifact_sha256
     assert delivery.state is InvoiceDeliveryState.PENDING
-    assert delivery.provider_operation_key == str(delivery.id)
+    assert delivery.provider_operation_key == f"invoice-delivery/{delivery.id}"
+    other_delivery, _ = _pending()
+    assert other_delivery.provider_operation_key != delivery.provider_operation_key
 
 
 def test_failed_attempt_is_preserved_before_retry_and_success_is_terminal() -> None:
@@ -61,17 +63,22 @@ def test_failed_attempt_is_preserved_before_retry_and_success_is_terminal() -> N
         claimed,
         attempt_id=first_id,
         failed_at=first_start + timedelta(seconds=1),
-        failure_reason="definitive provider rejection",
+        failure_reason="retryable provider failure",
     )
 
     assert failed.state is InvoiceDeliveryState.PENDING
-    assert failed.attempts[0].failure_reason == "definitive provider rejection"
+    assert failed.attempts[0].failure_reason == "retryable provider failure"
     assert failed.attempts[0].sequence == 1
 
     second_start = first_start + timedelta(seconds=2)
     retried = claim_invoice_delivery(failed, attempt_id=second_id, started_at=second_start)
     sent_at = second_start + timedelta(seconds=1)
-    sent = mark_invoice_delivery_sent(retried, attempt_id=second_id, sent_at=sent_at)
+    sent = mark_invoice_delivery_sent(
+        retried,
+        attempt_id=second_id,
+        sent_at=sent_at,
+        provider_message_id="provider-message-1",
+    )
 
     assert sent.state is InvoiceDeliveryState.SENT
     assert sent.sent_at == sent_at
@@ -98,7 +105,12 @@ def test_only_exact_active_claim_token_can_record_outcome() -> None:
     )
 
     with pytest.raises(InvalidInvoiceDeliveryTransitionError, match="stale"):
-        mark_invoice_delivery_sent(claimed, attempt_id=uuid4(), sent_at=claimed.requested_at)
+        mark_invoice_delivery_sent(
+            claimed,
+            attempt_id=uuid4(),
+            sent_at=claimed.requested_at,
+            provider_message_id="provider-message-1",
+        )
     with pytest.raises(InvalidInvoiceDeliveryTransitionError, match="stale"):
         fail_invoice_delivery(
             claimed,

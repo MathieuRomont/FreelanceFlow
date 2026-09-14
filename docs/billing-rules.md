@@ -69,10 +69,12 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - Repeating approval of the same exact `(invoice ID, revision, artifact ID, artifact SHA-256)` target returns the original approval unchanged. This target-specific behavior does not establish a general request-idempotency framework. Attempting to approve a different artifact for an already-approved revision is a conflict and cannot revoke or replace history.
 - Creating or editing content produces a later revision that is unapproved; approval is never inherited. Historical approval of an earlier revision remains intact.
 - A durable logical delivery may be requested only for one existing immutable approval and its exact `(workspace, invoice ID, revision, artifact ID, artifact SHA-256)` target. One logical delivery exists per approval; repeating that exact request returns the existing record unchanged.
-- Delivery state is `pending`, `in_progress`, or terminal `sent`. A PostgreSQL row lock with `SKIP LOCKED` atomically claims a pending delivery and creates one open attempt with an application-generated claim token. Only that active token may record its outcome, and at most one attempt may be open for a delivery.
-- A definitive failed attempt is retained immutably and returns the logical delivery to `pending`; a later retry creates a new ordered attempt. A successful attempt makes the delivery terminal and it cannot be reclaimed, failed, reopened, replaced, or retargeted.
-- Creating a later InvoiceDraft revision does not edit or invalidate an earlier immutable approval or delivery. It requires its own artifact, approval, and delivery. This slice has no approval revocation or mutable recipient/schedule data.
-- A logical delivery UUID is stable across retries and is the candidate operation identity for a future provider adapter. It does not by itself guarantee provider idempotency.
+- Delivery state is `pending`, `in_progress`, terminal `sent`, or terminal `failed`. A PostgreSQL row lock with `SKIP LOCKED` atomically claims a pending delivery and creates one open attempt with an application-generated claim token. Only that active token may record its outcome, and at most one attempt may be open for a delivery.
+- Before the first provider call, sender, recipient, subject, body, and attachment filename are stored as one provider-neutral semantic message snapshot. Every retry of that logical delivery must use the same snapshot, the exact same frozen artifact bytes and media type, and the stable `invoice-delivery/<delivery UUID>` idempotency key. The client/provider never regenerates the artifact.
+- Provider acceptance records a nonblank provider message identifier, completes the attempt as `sent`, and makes the logical delivery terminal `sent`. In this application state, `sent` means only provider acceptance; it does not mean recipient delivery.
+- A provider rejection that definitively cannot be retried completes the attempt as `rejected` and makes the logical delivery terminal `failed`. A failure known not to have been accepted completes the attempt as retryable `failed`, returns the logical delivery to `pending`, and a later retry creates a new ordered attempt. An outcome whose acceptance is unknown completes the attempt as `ambiguous` but deliberately keeps the delivery `in_progress` and unclaimable pending reconciliation.
+- Resend is the first MVP email adapter. It uses its native idempotency header, sends the exact frozen artifact as an attachment, and keeps HTTP statuses and Resend error types behind a provider-neutral application boundary. Resend's idempotency retention is limited, so the stable key does not provide permanent exactly-once delivery.
+- Creating a later InvoiceDraft revision does not edit or invalidate an earlier immutable approval or delivery. It requires its own artifact, approval, and delivery. This slice has no approval revocation or mutable message/schedule data.
 - Sent invoice content and its delivered artifact remain immutable. Later changes to clients, rates, or source time must not rewrite them.
 - Corrections to sent invoices must use separate linked records; the legal document/process is unresolved.
 
@@ -97,7 +99,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
 
 The pure Invoice Draft scope does not implement VAT or tax calculation, legal invoice
-numbering, negative-invoice or credit-note semantics, external delivery, corrections,
+numbering, negative-invoice or credit-note semantics, corrections,
 PDF rendering, billing-period membership, or automatic line descriptions.
 Their rules remain unresolved or belong to later explicitly scoped work.
 
@@ -105,10 +107,12 @@ Their rules remain unresolved or belong to later explicitly scoped work.
 
 The durable local delivery state machine confirms atomic claiming and immutable target
 binding, but it does not make the external email action atomic with PostgreSQL. A crash after
-provider acceptance and before the success transaction commits leaves an `in_progress`
-attempt with an uncertain outcome. Do not reclaim or retry it automatically until provider
-idempotency/reconciliation and abandoned-claim lease policy are confirmed. No lease duration
-is selected by this implementation.
+provider acceptance and before the success transaction commits leaves an open `in_progress`
+attempt with an uncertain outcome. A timeout, network loss, generic server error, or malformed
+acceptance response is explicitly recorded as `ambiguous` and also remains `in_progress`.
+Do not reclaim or retry either form automatically until provider reconciliation and abandoned-
+claim lease policy are confirmed. Resend's finite idempotency-key retention cannot permanently
+resolve this ambiguity. No lease duration is selected by this implementation.
 
 Invoice approval now binds the immutable revision and exact artifact atomically. Revocation,
 replacement, and any actor identity remain undefined and must not be inferred.
@@ -128,9 +132,9 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
 | Tax and legal scope | What is the launch jurisdiction? Which tax modes, required invoice fields, numbering rules, and retention periods apply? These require separate validation. |
 | Numbering and dates | When is an invoice number assigned? How are numbering scope, issue dates, due dates, and voided numbers handled? |
-| Delivery request details | Recipients, schedule, email text, and whether changing any of them requires a new approval or delivery are not modeled yet. Immutable invoice revision/artifact content cannot be edited in place. |
-| Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which provider idempotency or reconciliation capability prevents duplicate sends after an uncertain outcome? The stable delivery UUID is available, but exactly-once delivery is not claimed. |
-| Meaning of sent | Does sent mean provider acceptance? How are delivery confirmation, bounce, unknown outcomes, cancellation, and deliberate resend represented? |
+| Delivery request details | The sender, recipient, subject, body, and attachment filename supplied to the worker are frozen before the first provider call and cannot change across retries. How are those values selected, when may a user replace an unsent delivery with a new logical delivery, and how is scheduling represented? Immutable invoice revision/artifact content cannot be edited in place. |
+| Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which Resend reconciliation operation is authoritative after an uncertain outcome or after the provider's idempotency-retention window expires? The stable delivery key is confirmed, but exactly-once delivery is not claimed. |
+| Downstream delivery status | Local `sent` means Resend accepted the request. How are recipient delivery confirmation, bounce, unknown downstream outcomes, cancellation, and deliberate resend represented? Webhook processing is not implemented. |
 | Corrections | Which correction documents and links are required? How are credits or adjustments allocated without rewriting sent content? |
 | Negative invoice amounts | Rate resolution and exact pricing do not reject negative rates, but their meaning on an InvoiceDraft and all credit-note behavior remain UNRESOLVED. Do not treat `ROUND_HALF_UP` for ordinary positive invoice lines as a legal negative-invoice or credit-note policy. |
 | Retention and deletion | What source data can be deleted while preserving required invoice provenance, audit records, and protected personal data? |

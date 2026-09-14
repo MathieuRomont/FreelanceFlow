@@ -28,6 +28,7 @@ class InvoiceDeliveryAttemptResponse(BaseModel):
     completed_at: datetime | None
     outcome: InvoiceDeliveryAttemptOutcome | None
     failure_reason: str | None
+    provider_message_id: str | None
 
     @classmethod
     def from_attempt(cls, value: InvoiceDeliveryAttempt) -> "InvoiceDeliveryAttemptResponse":
@@ -38,6 +39,7 @@ class InvoiceDeliveryAttemptResponse(BaseModel):
             completed_at=value.completed_at,
             outcome=value.outcome,
             failure_reason=value.failure_reason,
+            provider_message_id=value.provider_message_id,
         )
 
 

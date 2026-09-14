@@ -5,10 +5,16 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from freelanceflow.modules.billing.adapters.models import InvoiceApprovalRow
+from freelanceflow.modules.billing.adapters.models import (
+    InvoiceApprovalRow,
+    InvoiceArtifactRow,
+)
 from freelanceflow.modules.delivery.adapters.models import (
     InvoiceDeliveryAttemptRow,
     InvoiceDeliveryRow,
+)
+from freelanceflow.modules.delivery.application.email_provider import (
+    FrozenInvoiceAttachment,
 )
 from freelanceflow.modules.delivery.domain.invoice_deliveries import (
     ApprovedInvoiceTarget,
@@ -16,6 +22,7 @@ from freelanceflow.modules.delivery.domain.invoice_deliveries import (
     InvoiceDelivery,
     InvoiceDeliveryAttempt,
     InvoiceDeliveryAttemptOutcome,
+    InvoiceDeliveryMessage,
     InvoiceDeliveryState,
 )
 
@@ -41,6 +48,33 @@ def _attempt(row: InvoiceDeliveryAttemptRow) -> InvoiceDeliveryAttempt:
         completed_at=row.completed_at,
         outcome=(InvoiceDeliveryAttemptOutcome(row.outcome) if row.outcome is not None else None),
         failure_reason=row.failure_reason,
+        provider_message_id=row.provider_message_id,
+    )
+
+
+def _message(row: InvoiceDeliveryRow) -> InvoiceDeliveryMessage | None:
+    values = (
+        row.sender,
+        row.recipient,
+        row.subject,
+        row.body,
+        row.attachment_filename,
+    )
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise ValueError("Persisted delivery message snapshot is incomplete")
+    assert row.sender is not None
+    assert row.recipient is not None
+    assert row.subject is not None
+    assert row.body is not None
+    assert row.attachment_filename is not None
+    return InvoiceDeliveryMessage(
+        sender=row.sender,
+        recipient=row.recipient,
+        subject=row.subject,
+        body=row.body,
+        attachment_filename=row.attachment_filename,
     )
 
 
@@ -92,6 +126,11 @@ class InvoiceDeliveryRepository:
                 active_attempt_id=None,
                 sent_at=None,
                 attempt_count=0,
+                sender=None,
+                recipient=None,
+                subject=None,
+                body=None,
+                attachment_filename=None,
             )
         )
         self.session.flush()
@@ -129,6 +168,49 @@ class InvoiceDeliveryRepository:
         )
         return self._delivery(row) if row is not None else None
 
+    def get_frozen_artifact(
+        self, artifact_id: UUID
+    ) -> FrozenInvoiceAttachment | None:
+        row = self.session.scalar(
+            select(InvoiceArtifactRow).where(
+                InvoiceArtifactRow.id == artifact_id,
+                InvoiceArtifactRow.workspace_id == self.workspace_id,
+            )
+        )
+        if row is None:
+            return None
+        return FrozenInvoiceAttachment(
+            id=row.id,
+            workspace_id=row.workspace_id,
+            invoice_id=row.invoice_draft_id,
+            invoice_revision=row.invoice_revision,
+            sha256=row.sha256,
+            media_type=row.media_type,
+            content=row.content,
+        )
+
+    def save_message(self, value: InvoiceDelivery) -> None:
+        row = self._owned_row(value.id)
+        if (
+            row.state != InvoiceDeliveryState.IN_PROGRESS.value
+            or row.active_attempt_id != value.active_attempt_id
+            or value.message is None
+        ):
+            raise InvalidInvoiceDeliveryTransitionError(
+                "Persisted delivery message cannot be prepared"
+            )
+        existing = _message(row)
+        if existing is not None and existing != value.message:
+            raise InvalidInvoiceDeliveryTransitionError(
+                "Delivery message cannot change between attempts"
+            )
+        row.sender = value.message.sender
+        row.recipient = value.message.recipient
+        row.subject = value.message.subject
+        row.body = value.message.body
+        row.attachment_filename = value.message.attachment_filename
+        self.session.flush()
+
     def save_claim(self, value: InvoiceDelivery) -> None:
         row = self._owned_row(value.id)
         if (
@@ -151,6 +233,7 @@ class InvoiceDeliveryRepository:
                 completed_at=None,
                 outcome=None,
                 failure_reason=None,
+                provider_message_id=None,
             )
         )
         row.state = value.state.value
@@ -175,6 +258,39 @@ class InvoiceDeliveryRepository:
         row.active_attempt_id = None
         self.session.flush()
 
+    def save_rejection(self, value: InvoiceDelivery) -> None:
+        row, attempt_row = self._active_rows(value)
+        attempt = value.attempts[-1]
+        if (
+            value.state is not InvoiceDeliveryState.FAILED
+            or attempt.outcome is not InvoiceDeliveryAttemptOutcome.REJECTED
+        ):
+            raise InvalidInvoiceDeliveryTransitionError(
+                "Delivery rejection transition is inconsistent"
+            )
+        attempt_row.completed_at = attempt.completed_at
+        attempt_row.outcome = attempt.outcome.value
+        attempt_row.failure_reason = attempt.failure_reason
+        row.state = value.state.value
+        row.active_attempt_id = None
+        self.session.flush()
+
+    def save_ambiguous(self, value: InvoiceDelivery) -> None:
+        row, attempt_row = self._active_rows(value)
+        attempt = value.attempts[-1]
+        if (
+            value.state is not InvoiceDeliveryState.IN_PROGRESS
+            or attempt.outcome is not InvoiceDeliveryAttemptOutcome.AMBIGUOUS
+            or value.active_attempt_id != attempt.id
+        ):
+            raise InvalidInvoiceDeliveryTransitionError(
+                "Ambiguous delivery transition is inconsistent"
+            )
+        attempt_row.completed_at = attempt.completed_at
+        attempt_row.outcome = attempt.outcome.value
+        attempt_row.failure_reason = attempt.failure_reason
+        self.session.flush()
+
     def save_sent(self, value: InvoiceDelivery) -> None:
         row, attempt_row = self._active_rows(value)
         attempt = value.attempts[-1]
@@ -188,6 +304,7 @@ class InvoiceDeliveryRepository:
             )
         attempt_row.completed_at = attempt.completed_at
         attempt_row.outcome = attempt.outcome.value
+        attempt_row.provider_message_id = attempt.provider_message_id
         row.state = value.state.value
         row.active_attempt_id = None
         row.sent_at = value.sent_at
@@ -249,4 +366,5 @@ class InvoiceDeliveryRepository:
             active_attempt_id=row.active_attempt_id,
             sent_at=row.sent_at,
             attempts=attempts,
+            message=_message(row),
         )
