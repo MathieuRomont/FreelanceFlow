@@ -26,8 +26,8 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | InvoiceAllocation | Association between a billed TimeEntry segment and an invoice line, including allocated interval/quantity and provenance | Prevents duplicate billing of the same time; traces a line back to allocated work in the invoice workspace and client, with compatible project/task relationships and invoice currency/rate context; reservation/release policy remains unresolved |
 | InvoiceArtifact | Application-generated identity, exact InvoiceDraft revision identity, media type, immutable bytes, exact byte size, lowercase hexadecimal SHA-256 digest, creation instant | Belongs to one workspace and one exact persisted revision; content-derived size and digest are server-authoritative; later revisions never rebind it |
 | InvoiceApproval | Application-generated identity, workspace, exact invoice ID/revision, exact artifact ID/SHA-256 snapshot, approval timestamp | Immutable and unique per invoice revision; no actor is recorded before authentication exists; later revisions do not inherit it and a different artifact cannot replace it |
-| InvoiceDelivery | Application-generated identity, exact immutable approval/revision/artifact/digest snapshot, requested time, state, ordered attempts | One logical delivery per approval; pending claims are atomic; sent is terminal; later revisions cannot retarget it |
-| InvoiceDeliveryAttempt | Application-generated claim token, delivery identity, sequence, start/completion times, outcome, failure reason | Append-only history; at most one open attempt per delivery; only the active token may finish the claim |
+| InvoiceDelivery | Application-generated identity, exact immutable approval/revision/artifact/digest snapshot, requested time, provider-neutral message snapshot, state, ordered attempts | One logical delivery per approval; pending claims are atomic; the message and frozen artifact are stable across retries; provider-accepted `sent` and definitive `failed` are terminal; later revisions cannot retarget it |
+| InvoiceDeliveryAttempt | Application-generated claim token, delivery identity, sequence, start/completion times, outcome, safe failure reason, optional accepted provider message ID | Append-only history; at most one open attempt per delivery; only the active token may finish the claim; provider-specific errors do not cross the adapter boundary |
 | AuditEvent | Actor, timestamp, entity/version, action, relevant change information, correlation identifier | Append-only; records important changes without secrets or unnecessary sensitive source payloads |
 
 Issue #5 implements Task as a category belonging to exactly one Project, carrying client and workspace ownership through that project. TimeEntry explicitly carries workspace ownership, aware start/end timestamps, a billable flag, and optional client/project/task references. Classification must form a consistent ownership chain: a project requires its selected client, and a task requires its selected project, all within the entry workspace.
@@ -54,16 +54,24 @@ Time Tracking owns calendar/work interval duration and local-day splitting. Bill
 
 TimeEntries may be edited and classified. Eligible entries may generate drafts without individual approval; ambiguous, unclassified, or unbillable entries must block generation or be explicitly excluded. The freelancer reviews the resulting invoice before approval. Detailed TimeEntry review semantics remain unresolved.
 
-The local delivery lifecycle is `pending → in_progress → sent`, with a definitive
-failed attempt returning the logical delivery to `pending` for a new claim. Claiming locks
-one pending row with PostgreSQL `FOR UPDATE SKIP LOCKED`, persists the attempt token in the
-same transaction, and permits only that token to record an outcome. Attempt failures remain
-historical. `sent` is terminal and cannot be reclaimed.
+The local delivery lifecycle starts `pending → in_progress`. A failure known not to have
+been accepted records a retryable `failed` attempt and returns the logical delivery to
+`pending`; a provider rejection records `rejected` and makes the delivery terminal `failed`;
+provider acceptance records `sent` with its provider message ID and makes the delivery
+terminal `sent`. A timeout, network loss, generic provider server failure, or malformed
+success response records an `ambiguous` attempt and deliberately remains `in_progress`.
+Claiming locks one pending row with PostgreSQL `FOR UPDATE SKIP LOCKED`, persists the attempt
+token in the same transaction, and permits only that token to record an outcome. All attempt
+outcomes remain historical.
 
 There is no mutable approved content to edit or invalidate: delivery references an immutable
 approval, revision, artifact, and digest. A later revision and its approval are a distinct
-target and never retarget an existing delivery. External send orchestration, recipients,
-scheduling, provider semantics, and abandoned-claim recovery remain unresolved.
+target and never retarget an existing delivery. Sender, recipient, subject, body, and
+attachment filename are provider-neutral values frozen before the first external call and
+cannot change on retry. The exact stored artifact bytes and media type are supplied through
+the application port to the Resend adapter. `sent` means provider acceptance, not recipient
+delivery. Scheduling, webhook/delivery-confirmation semantics, deliberate resend, and
+abandoned-claim recovery remain unresolved.
 
 Approval applies to an exact invoice revision and frozen artifact, and delivery must use that corresponding artifact. Invoice versions must retain the calculation inputs and results needed to explain the bill. Historical approvals and delivery attempts remain auditable after edits, failures, or corrections.
 

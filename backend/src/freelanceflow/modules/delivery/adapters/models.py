@@ -55,7 +55,7 @@ class InvoiceDeliveryRow(Base):
             name="canonical_artifact_sha256",
         ),
         CheckConstraint(
-            "state IN ('pending', 'in_progress', 'sent')",
+            "state IN ('pending', 'in_progress', 'sent', 'failed')",
             name="valid_state",
         ),
         CheckConstraint("attempt_count >= 0", name="nonnegative_attempt_count"),
@@ -64,8 +64,20 @@ class InvoiceDeliveryRow(Base):
             "(state = 'in_progress' AND active_attempt_id IS NOT NULL "
             "AND sent_at IS NULL AND attempt_count > 0) OR "
             "(state = 'sent' AND active_attempt_id IS NULL "
-            "AND sent_at IS NOT NULL AND attempt_count > 0)",
+            "AND sent_at IS NOT NULL AND attempt_count > 0) OR "
+            "(state = 'failed' AND active_attempt_id IS NULL "
+            "AND sent_at IS NULL AND attempt_count > 0)",
             name="consistent_state_metadata",
+        ),
+        CheckConstraint(
+            "(sender IS NULL AND recipient IS NULL AND subject IS NULL "
+            "AND body IS NULL AND attachment_filename IS NULL) OR "
+            "(sender IS NOT NULL AND length(btrim(sender)) > 0 "
+            "AND recipient IS NOT NULL AND length(btrim(recipient)) > 0 "
+            "AND subject IS NOT NULL AND body IS NOT NULL "
+            "AND attachment_filename IS NOT NULL "
+            "AND length(btrim(attachment_filename)) > 0)",
+            name="complete_message_snapshot",
         ),
         CheckConstraint(
             "sent_at IS NULL OR sent_at >= requested_at",
@@ -85,6 +97,11 @@ class InvoiceDeliveryRow(Base):
     active_attempt_id: Mapped[UUID | None]
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt_count: Mapped[int] = mapped_column(Integer)
+    sender: Mapped[str | None]
+    recipient: Mapped[str | None]
+    subject: Mapped[str | None]
+    body: Mapped[str | None]
+    attachment_filename: Mapped[str | None]
 
 
 class InvoiceDeliveryAttemptRow(Base):
@@ -104,14 +121,19 @@ class InvoiceDeliveryAttemptRow(Base):
         ),
         CheckConstraint("sequence > 0", name="positive_sequence"),
         CheckConstraint(
-            "outcome IS NULL OR outcome IN ('failed', 'sent')",
+            "outcome IS NULL OR outcome IN ('failed', 'rejected', 'ambiguous', 'sent')",
             name="valid_outcome",
         ),
         CheckConstraint(
-            "(outcome IS NULL AND completed_at IS NULL AND failure_reason IS NULL) OR "
-            "(outcome = 'sent' AND completed_at IS NOT NULL AND failure_reason IS NULL) OR "
-            "(outcome = 'failed' AND completed_at IS NOT NULL "
-            "AND length(btrim(failure_reason)) > 0)",
+            "(outcome IS NULL AND completed_at IS NULL AND failure_reason IS NULL "
+            "AND provider_message_id IS NULL) OR "
+            "(outcome = 'sent' AND completed_at IS NOT NULL "
+            "AND failure_reason IS NULL AND (provider_message_id IS NULL "
+            "OR length(btrim(provider_message_id)) > 0)) OR "
+            "(outcome IN ('failed', 'rejected', 'ambiguous') "
+            "AND completed_at IS NOT NULL AND failure_reason IS NOT NULL "
+            "AND length(btrim(failure_reason)) > 0 "
+            "AND provider_message_id IS NULL)",
             name="consistent_outcome_metadata",
         ),
         CheckConstraint(
@@ -134,3 +156,4 @@ class InvoiceDeliveryAttemptRow(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     outcome: Mapped[str | None]
     failure_reason: Mapped[str | None]
+    provider_message_id: Mapped[str | None]

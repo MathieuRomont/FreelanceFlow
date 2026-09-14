@@ -111,8 +111,15 @@ A durable logical delivery in the Delivery module is bound by foreign key to one
 revision, artifact UUID, and artifact SHA-256 snapshot. Repeating a request for the same
 approval returns that delivery. Workers atomically claim pending deliveries with PostgreSQL
 row locking and `SKIP LOCKED`; each claim creates a new immutable attempt identity that is
-required to record failure or success. A successful delivery is terminal. A later invoice
-revision is a separate immutable snapshot and cannot alter the historical delivery target.
+required to record failure or success. Before the first provider call, the application
+persists a provider-neutral snapshot of sender, recipient, subject, body, and attachment
+filename. Every retry must use that same semantic message, the same frozen artifact bytes,
+and the stable `invoice-delivery/<delivery UUID>` provider operation key. Provider acceptance
+records the provider message identifier and makes the delivery terminal `sent`; this state
+does not assert recipient delivery. A definitive rejection is terminal `failed`, a known
+retryable failure returns to `pending`, and an unknown acceptance result remains
+`in_progress` for reconciliation. A later invoice revision is a separate immutable snapshot
+and cannot alter the historical delivery target.
 
 ## Worker and external operations
 
@@ -120,12 +127,13 @@ A background worker handles calendar synchronization, document work, and schedul
 
 For the MVP, prefer PostgreSQL-backed durable jobs and a simple transactional outbox if needed. Do not introduce Kafka, RabbitMQ, generic event buses, event sourcing, or microservices by default. Approval state and the corresponding durable delivery request are committed consistently. Workers record attempts and outcomes. Automatic recovery of an abandoned claim remains blocked until a lease/timeout policy is confirmed.
 
-External operations must be idempotent. The stable logical delivery UUID is available as a
-future provider operation key, but this only prevents duplicates when the selected provider
-honors idempotency or supports reconciliation. A provider timeout or a crash after provider
-acceptance but before the database success commit leaves the attempt uncertain and in
-progress; it must not be retried automatically. Do not assume a local transaction can make
-a remote send atomic or claim exactly-once delivery.
+External operations must be idempotent. The Resend adapter supplies the stable logical
+delivery operation key on every attempt, but Resend retains idempotency keys for a limited
+period. This reduces duplicates only within the provider guarantee and does not replace
+reconciliation. A provider timeout, other result that does not prove non-acceptance, or a
+crash after provider acceptance but before the database success commit leaves the attempt
+uncertain and in progress; it must not be retried automatically. Do not assume a local
+transaction can make a remote send atomic or claim exactly-once delivery.
 
 ## Database boundaries
 
@@ -140,6 +148,6 @@ a remote send atomic or claim exactly-once delivery.
 
 ## External adapters
 
-Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering. Frozen artifact bytes use PostgreSQL `BYTEA` for the MVP. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports.
+Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering. Frozen artifact bytes use PostgreSQL `BYTEA` for the MVP. A narrow provider-neutral email port belongs to the Delivery application layer; the Resend HTTP adapter and environment-backed credentials belong to adapters. The adapter Base64-encodes the already-frozen bytes only for transport and never regenerates invoice content. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports and transports.
 
-Exact rendering libraries, email provider, and worker mechanism remain unresolved implementation choices. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
+Exact rendering libraries and the worker mechanism remain unresolved implementation choices. Resend is the first MVP transactional email adapter; provider failover and webhook processing are out of scope. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
