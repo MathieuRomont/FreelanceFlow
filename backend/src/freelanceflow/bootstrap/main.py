@@ -7,16 +7,26 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
+from freelanceflow.modules.billing.adapters.invoice_artifact_transactions import (
+    SqlAlchemyInvoiceArtifactTransaction,
+)
 from freelanceflow.modules.billing.adapters.invoice_draft_transactions import (
     SqlAlchemyInvoiceDraftTransaction,
 )
 from freelanceflow.modules.billing.adapters.transactions import (
     SqlAlchemyRateAgreementTransaction,
 )
+from freelanceflow.modules.billing.api.invoice_artifacts import (
+    get_invoice_artifact_service,
+)
+from freelanceflow.modules.billing.api.invoice_artifacts import router as invoice_artifact_router
 from freelanceflow.modules.billing.api.invoice_drafts import get_invoice_draft_service
 from freelanceflow.modules.billing.api.invoice_drafts import router as invoice_draft_router
 from freelanceflow.modules.billing.api.rate_agreements import get_rate_agreement_service
 from freelanceflow.modules.billing.api.rate_agreements import router as rate_agreement_router
+from freelanceflow.modules.billing.application.invoice_artifacts import (
+    InvoiceArtifactService,
+)
 from freelanceflow.modules.billing.application.invoice_drafts import InvoiceDraftService
 from freelanceflow.modules.billing.application.rate_agreements import RateAgreementService
 from freelanceflow.modules.clients.adapters.repository import ClientRepository
@@ -59,6 +69,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                     configured_engine, ClientRepository, TimeEntryRepository
                 )
             )
+            invoice_artifact_service = InvoiceArtifactService(
+                SqlAlchemyInvoiceArtifactTransaction(configured_engine)
+            )
             application.dependency_overrides[get_client_service] = lambda: service
             application.dependency_overrides[get_project_task_service] = (
                 lambda: project_task_service
@@ -72,6 +85,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides[get_invoice_draft_service] = (
                 lambda: invoice_draft_service
             )
+            application.dependency_overrides[get_invoice_artifact_service] = (
+                lambda: invoice_artifact_service
+            )
         try:
             yield
         finally:
@@ -80,6 +96,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides.pop(get_rate_agreement_service, None)
             application.dependency_overrides.pop(get_time_entry_service, None)
             application.dependency_overrides.pop(get_invoice_draft_service, None)
+            application.dependency_overrides.pop(get_invoice_artifact_service, None)
             if owned_engine is not None:
                 owned_engine.dispose()
 
@@ -89,6 +106,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     application.include_router(rate_agreement_router)
     application.include_router(time_entry_router)
     application.include_router(invoice_draft_router)
+    application.include_router(invoice_artifact_router)
 
     @application.get("/health")
     def health() -> dict[str, str]:
