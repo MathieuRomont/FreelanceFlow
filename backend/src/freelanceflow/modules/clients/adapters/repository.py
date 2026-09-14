@@ -63,6 +63,19 @@ class ClientRepository:
         assert client is not None
         return Project(row.id, client, row.name)
 
+    def list_projects(self, client_id: UUID) -> list[Project]:
+        rows = self.session.scalars(
+            select(ProjectRow)
+            .where(
+                ProjectRow.workspace_id == self.workspace_id,
+                ProjectRow.client_id == client_id,
+            )
+            .order_by(ProjectRow.id)
+        )
+        client = self.get_client(client_id)
+        assert client is not None
+        return [Project(row.id, client, row.name) for row in rows]
+
     def add_task(self, value: Task) -> None:
         if value.project.client.workspace_id != self.workspace_id:
             raise ValueError("Workspace mismatch")
@@ -88,3 +101,16 @@ class ClientRepository:
         project = self.get_project(row.project_id)
         assert project is not None
         return Task(row.id, project, row.name)
+
+    def list_tasks(self, project_id: UUID) -> list[Task]:
+        rows = self.session.scalars(
+            select(TaskRow)
+            .where(
+                TaskRow.workspace_id == self.workspace_id,
+                TaskRow.project_id == project_id,
+            )
+            .order_by(TaskRow.id)
+        )
+        project = self.get_project(project_id)
+        assert project is not None
+        return [Task(row.id, project, row.name) for row in rows]

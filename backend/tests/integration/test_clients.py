@@ -12,7 +12,7 @@ from freelanceflow.modules.clients.adapters.models import ClientRow
 from freelanceflow.modules.clients.adapters.repository import ClientRepository
 from freelanceflow.modules.clients.adapters.transactions import SqlAlchemyClientTransaction
 from freelanceflow.modules.clients.application.clients import ClientService
-from freelanceflow.modules.clients.domain import Client
+from freelanceflow.modules.clients.domain import Client, Project
 
 from .conftest import disposable_database, migrate
 
@@ -82,6 +82,80 @@ def test_api(database: Engine) -> None:
         assert ClientRepository(session, workspace_id=workspace).get_client(identifier) == Client(
             identifier, workspace, "  Acme\t"
         )
+
+
+def test_project_task_api_and_transaction_behavior(database: Engine) -> None:
+    workspace, other = uuid4(), uuid4()
+    clients_path = f"/workspaces/{workspace}/clients"
+    with TestClient(create_app(database)) as http:
+        client_response = http.post(clients_path, json={"name": "Acme"})
+        client = client_response.json()
+        projects_path = f"{clients_path}/{client['id']}/projects"
+        project_response = http.post(projects_path, json={"name": "Website"})
+        assert project_response.status_code == 201
+        project = project_response.json()
+        assert set(project) == {"id", "workspace_id", "client_id", "name"}
+        assert project["workspace_id"] == str(workspace)
+        assert project["client_id"] == client["id"]
+        UUID(project["id"])
+        assert http.get(projects_path).json() == [project]
+        assert http.get(f"/workspaces/{workspace}/projects/{project['id']}").json() == project
+
+        tasks_path = f"/workspaces/{workspace}/projects/{project['id']}/tasks"
+        task_response = http.post(tasks_path, json={"name": "Design"})
+        assert task_response.status_code == 201
+        task = task_response.json()
+        assert set(task) == {"id", "workspace_id", "client_id", "project_id", "name"}
+        assert task["workspace_id"] == str(workspace)
+        assert task["client_id"] == client["id"] and task["project_id"] == project["id"]
+        UUID(task["id"])
+        assert http.get(tasks_path).json() == [task]
+        assert http.get(f"/workspaces/{workspace}/tasks/{task['id']}").json() == task
+
+        for path in [
+            f"/workspaces/{workspace}/clients/{uuid4()}/projects",
+            f"/workspaces/{other}/clients/{client['id']}/projects",
+            f"/workspaces/{workspace}/projects/{uuid4()}/tasks",
+            f"/workspaces/{other}/projects/{project['id']}/tasks",
+        ]:
+            assert http.post(path, json={"name": "Invalid"}).status_code == 404
+        for path in [
+            f"/workspaces/{workspace}/clients/{uuid4()}/projects",
+            f"/workspaces/{other}/clients/{client['id']}/projects",
+            f"/workspaces/{workspace}/projects/{uuid4()}",
+            f"/workspaces/{other}/projects/{project['id']}",
+            f"/workspaces/{workspace}/projects/{uuid4()}/tasks",
+            f"/workspaces/{other}/projects/{project['id']}/tasks",
+            f"/workspaces/{workspace}/tasks/{uuid4()}",
+            f"/workspaces/{other}/tasks/{task['id']}",
+        ]:
+            response = http.get(path)
+            assert response.status_code == 404
+            assert response.json() == {"detail": "Resource not found"}
+        for path in [projects_path, tasks_path]:
+            assert http.post(path, json={}).status_code == 422
+            assert http.post(path, json={"name": "Valid", "id": str(uuid4())}).status_code == 422
+
+    with Session(database) as session:
+        repository = ClientRepository(session, workspace_id=workspace)
+        stored_project = repository.get_project(UUID(project["id"]))
+        stored_task = repository.get_task(UUID(task["id"]))
+        assert stored_project is not None and stored_project.name == "Website"
+        assert stored_task is not None and stored_task.name == "Design"
+        other_repository = ClientRepository(session, workspace_id=other)
+        assert other_repository.get_project(UUID(project["id"])) is None
+        assert other_repository.get_task(UUID(task["id"])) is None
+
+    transaction = SqlAlchemyClientTransaction(database)
+    service = ClientService(transaction)
+    rollback_client = service.create(workspace, "Rollback parent")
+    project_id = uuid4()
+    with pytest.raises(RuntimeError, match="after flush"):
+        with transaction(workspace) as transaction_repository:
+            transaction_repository.add_project(Project(project_id, rollback_client, "Rolled back"))
+            raise RuntimeError("after flush")
+    with transaction(workspace) as transaction_repository:
+        assert transaction_repository.get_project(project_id) is None
 
 
 def test_migration_existing_clients() -> None:
