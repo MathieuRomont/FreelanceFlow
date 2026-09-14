@@ -277,6 +277,14 @@ class InvoiceAllocationRow(Base):
 class InvoiceArtifactRow(Base):
     __tablename__ = "invoice_artifacts"
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "workspace_id",
+            "invoice_draft_id",
+            "invoice_revision",
+            "sha256",
+            name="uq_invoice_artifacts_approval_target",
+        ),
         ForeignKeyConstraint(
             ["invoice_draft_id", "invoice_revision", "workspace_id"],
             [
@@ -310,3 +318,51 @@ class InvoiceArtifactRow(Base):
     byte_size: Mapped[int] = mapped_column(BigInteger)
     content: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class InvoiceApprovalRow(Base):
+    __tablename__ = "invoice_approvals"
+    __table_args__ = (
+        UniqueConstraint(
+            "invoice_draft_id",
+            "invoice_revision",
+            name="uq_invoice_approvals_exact_revision",
+        ),
+        ForeignKeyConstraint(
+            ["invoice_draft_id", "invoice_revision", "workspace_id"],
+            [
+                "invoice_drafts.id",
+                "invoice_drafts.revision",
+                "invoice_drafts.workspace_id",
+            ],
+        ),
+        ForeignKeyConstraint(
+            [
+                "artifact_id",
+                "workspace_id",
+                "invoice_draft_id",
+                "invoice_revision",
+                "artifact_sha256",
+            ],
+            [
+                "invoice_artifacts.id",
+                "invoice_artifacts.workspace_id",
+                "invoice_artifacts.invoice_draft_id",
+                "invoice_artifacts.invoice_revision",
+                "invoice_artifacts.sha256",
+            ],
+        ),
+        CheckConstraint("invoice_revision > 0", name="positive_invoice_revision"),
+        CheckConstraint(
+            "artifact_sha256 ~ '^[0-9a-f]{64}$'",
+            name="canonical_artifact_sha256",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[UUID]
+    invoice_draft_id: Mapped[UUID]
+    invoice_revision: Mapped[int] = mapped_column(Integer)
+    artifact_id: Mapped[UUID]
+    artifact_sha256: Mapped[str] = mapped_column(String(64))
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

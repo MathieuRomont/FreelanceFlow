@@ -100,7 +100,12 @@ artifact UUID and creation time and derives a lowercase hexadecimal SHA-256 dige
 exact byte size from the payload. Metadata retrieval is separate from binary retrieval;
 there is no mutable current-artifact pointer.
 
-Approval applies to an exact invoice revision and frozen artifact. Delivery must use the artifact corresponding to that approved revision. Editing approved content invalidates approval. Sent content and its artifact remain immutable; delivery history can continue to accumulate separately.
+Approval is an immutable record bound to one exact invoice revision, artifact UUID, and
+artifact SHA-256 snapshot. PostgreSQL serializes approval attempts on the revision and
+enforces at most one approval per revision. Repeating the same exact target returns its
+existing approval; a different artifact conflicts and cannot replace it. Later revisions
+remain unapproved. Delivery must use the artifact corresponding to the approved revision.
+Sent content and its artifact remain immutable; delivery history can accumulate separately.
 
 Delivery implementation is blocked until atomic claiming of an approved invoice for sending, permitted edits while delivery is in progress, and the interaction of approval invalidation with sending are defined. Rechecking approval alone does not resolve the send/edit race. No final concurrency policy is chosen here.
 
