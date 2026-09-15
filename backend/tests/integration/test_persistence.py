@@ -315,6 +315,7 @@ def test_migration_cycle() -> None:
             "invoice_delivery_provider_event_matches",
             "workspace_billing_profiles",
             "client_billing_profiles",
+            "workspace_invoice_settings",
             "alembic_version",
         }
         migrate(engine, "check")

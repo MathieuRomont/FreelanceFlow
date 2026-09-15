@@ -19,6 +19,9 @@ from freelanceflow.modules.billing.adapters.invoice_artifact_transactions import
 from freelanceflow.modules.billing.adapters.invoice_draft_transactions import (
     SqlAlchemyInvoiceDraftTransaction,
 )
+from freelanceflow.modules.billing.adapters.invoice_settings_transactions import (
+    SqlAlchemyInvoiceSettingsTransaction,
+)
 from freelanceflow.modules.billing.adapters.transactions import (
     SqlAlchemyRateAgreementTransaction,
 )
@@ -36,6 +39,8 @@ from freelanceflow.modules.billing.api.invoice_artifacts import (
 from freelanceflow.modules.billing.api.invoice_artifacts import router as invoice_artifact_router
 from freelanceflow.modules.billing.api.invoice_drafts import get_invoice_draft_service
 from freelanceflow.modules.billing.api.invoice_drafts import router as invoice_draft_router
+from freelanceflow.modules.billing.api.invoice_settings import get_invoice_settings_service
+from freelanceflow.modules.billing.api.invoice_settings import router as invoice_settings_router
 from freelanceflow.modules.billing.api.rate_agreements import get_rate_agreement_service
 from freelanceflow.modules.billing.api.rate_agreements import router as rate_agreement_router
 from freelanceflow.modules.billing.application.billing_profiles import BillingProfileService
@@ -46,6 +51,7 @@ from freelanceflow.modules.billing.application.invoice_artifacts import (
     InvoiceArtifactService,
 )
 from freelanceflow.modules.billing.application.invoice_drafts import InvoiceDraftService
+from freelanceflow.modules.billing.application.invoice_settings import InvoiceSettingsService
 from freelanceflow.modules.billing.application.rate_agreements import RateAgreementService
 from freelanceflow.modules.clients.adapters.repository import ClientRepository
 from freelanceflow.modules.clients.adapters.transactions import SqlAlchemyClientTransaction
@@ -111,6 +117,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             billing_profile_service = BillingProfileService(
                 SqlAlchemyBillingProfileTransaction(configured_engine, ClientRepository)
             )
+            invoice_settings_service = InvoiceSettingsService(
+                SqlAlchemyInvoiceSettingsTransaction(configured_engine)
+            )
             time_entry_service = TimeEntryService(
                 SqlAlchemyTimeEntryTransaction(configured_engine, ClientRepository)
             )
@@ -145,6 +154,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides[get_billing_profile_service] = (
                 lambda: billing_profile_service
             )
+            application.dependency_overrides[get_invoice_settings_service] = (
+                lambda: invoice_settings_service
+            )
             application.dependency_overrides[get_time_entry_service] = (
                 lambda: time_entry_service
             )
@@ -177,6 +189,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides.pop(get_project_task_service, None)
             application.dependency_overrides.pop(get_rate_agreement_service, None)
             application.dependency_overrides.pop(get_billing_profile_service, None)
+            application.dependency_overrides.pop(get_invoice_settings_service, None)
             application.dependency_overrides.pop(get_time_entry_service, None)
             application.dependency_overrides.pop(get_invoice_draft_service, None)
             application.dependency_overrides.pop(get_invoice_artifact_service, None)
@@ -196,6 +209,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     application.include_router(project_task_router)
     application.include_router(rate_agreement_router)
     application.include_router(billing_profile_router)
+    application.include_router(invoice_settings_router)
     application.include_router(time_entry_router)
     application.include_router(invoice_draft_router)
     application.include_router(invoice_artifact_router)
