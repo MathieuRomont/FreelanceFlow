@@ -13,6 +13,7 @@ dependencies = [
     "alembic>=1.15,<2",
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
+    "svix>=1.96,<2",
 ]
 
 [project.optional-dependencies]

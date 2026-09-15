@@ -311,6 +311,8 @@ def test_migration_cycle() -> None:
             "invoice_approvals",
             "invoice_deliveries",
             "invoice_delivery_attempts",
+            "invoice_delivery_provider_events",
+            "invoice_delivery_provider_event_matches",
             "alembic_version",
         }
         migrate(engine, "check")

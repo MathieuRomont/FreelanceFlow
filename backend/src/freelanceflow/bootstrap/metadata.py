@@ -12,6 +12,8 @@ from freelanceflow.modules.billing.adapters.models import (
 from freelanceflow.modules.clients.adapters.models import ClientRow, ProjectRow, TaskRow
 from freelanceflow.modules.delivery.adapters.models import (
     InvoiceDeliveryAttemptRow,
+    InvoiceDeliveryProviderEventMatchRow,
+    InvoiceDeliveryProviderEventRow,
     InvoiceDeliveryRow,
 )
 from freelanceflow.modules.time_tracking.adapters.models import TimeEntryRow
@@ -27,6 +29,8 @@ __all__ = [
     "InvoiceDraftHeadRow",
     "InvoiceDeliveryRow",
     "InvoiceDeliveryAttemptRow",
+    "InvoiceDeliveryProviderEventRow",
+    "InvoiceDeliveryProviderEventMatchRow",
     "InvoiceLineRow",
     "InvoiceAllocationRow",
     "InvoiceApprovalRow",

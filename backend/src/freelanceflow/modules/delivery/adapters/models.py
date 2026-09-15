@@ -115,6 +115,15 @@ class InvoiceDeliveryAttemptRow(Base):
             "sequence",
             name="uq_invoice_delivery_attempts_delivery_sequence",
         ),
+        UniqueConstraint(
+            "provider_message_id",
+            name="uq_invoice_delivery_attempts_provider_message_id",
+        ),
+        UniqueConstraint(
+            "delivery_id",
+            "provider_message_id",
+            name="uq_invoice_delivery_attempts_delivery_provider_message",
+        ),
         ForeignKeyConstraint(
             ["delivery_id", "workspace_id"],
             ["invoice_deliveries.id", "invoice_deliveries.workspace_id"],
@@ -157,3 +166,92 @@ class InvoiceDeliveryAttemptRow(Base):
     outcome: Mapped[str | None]
     failure_reason: Mapped[str | None]
     provider_message_id: Mapped[str | None]
+
+
+class InvoiceDeliveryProviderEventRow(Base):
+    __tablename__ = "invoice_delivery_provider_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_event_id",
+            name="uq_invoice_delivery_provider_events_provider_event_id",
+        ),
+        UniqueConstraint(
+            "id",
+            "provider_message_id",
+            name="uq_invoice_delivery_provider_events_id_provider_message",
+        ),
+        CheckConstraint(
+            "length(btrim(provider_event_id)) > 0",
+            name="nonblank_provider_event_id",
+        ),
+        CheckConstraint(
+            "provider_message_id IS NULL OR "
+            "length(btrim(provider_message_id)) > 0",
+            name="nonblank_provider_message_id",
+        ),
+        CheckConstraint(
+            "length(btrim(raw_event_type)) > 0",
+            name="nonblank_raw_event_type",
+        ),
+        CheckConstraint(
+            "event_kind IN ('provider_accepted', 'recipient_delivered', "
+            "'delivery_delayed', 'bounced', 'provider_failed', "
+            "'complained', 'unsupported')",
+            name="valid_event_kind",
+        ),
+        CheckConstraint(
+            "event_kind = 'unsupported' OR provider_message_id IS NOT NULL",
+            name="supported_event_has_provider_message",
+        ),
+        CheckConstraint(
+            "payload_sha256 ~ '^[0-9a-f]{64}$'",
+            name="canonical_payload_sha256",
+        ),
+        Index(
+            "ix_invoice_delivery_provider_events_provider_message_id",
+            "provider_message_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    provider_event_id: Mapped[str]
+    provider_message_id: Mapped[str | None]
+    raw_event_type: Mapped[str]
+    event_kind: Mapped[str]
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload_sha256: Mapped[str] = mapped_column(String(64))
+
+
+class InvoiceDeliveryProviderEventMatchRow(Base):
+    __tablename__ = "invoice_delivery_provider_event_matches"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["event_id", "provider_message_id"],
+            [
+                "invoice_delivery_provider_events.id",
+                "invoice_delivery_provider_events.provider_message_id",
+            ],
+        ),
+        ForeignKeyConstraint(
+            ["delivery_id", "provider_message_id"],
+            [
+                "invoice_delivery_attempts.delivery_id",
+                "invoice_delivery_attempts.provider_message_id",
+            ],
+        ),
+        ForeignKeyConstraint(
+            ["delivery_id", "workspace_id"],
+            ["invoice_deliveries.id", "invoice_deliveries.workspace_id"],
+        ),
+        CheckConstraint(
+            "length(btrim(provider_message_id)) > 0",
+            name="nonblank_provider_message_id",
+        ),
+    )
+
+    event_id: Mapped[UUID] = mapped_column(primary_key=True)
+    delivery_id: Mapped[UUID]
+    workspace_id: Mapped[UUID]
+    provider_message_id: Mapped[str]
+    correlated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
