@@ -166,10 +166,8 @@ class InvoiceLine:
             raise IncompatibleInvoiceLineError(
                 "One line requires matching pricing-relevant context"
             )
-        expected_duration = sum(
-            allocation.duration_microseconds for allocation in self.allocations
-        )
-        expected_exact = _sum_exact(
+        expected_duration = sum(allocation.duration_microseconds for allocation in self.allocations)
+        expected_exact = sum_exact_money(
             tuple(allocation.exact_amount for allocation in self.allocations)
         )
         if (
@@ -182,7 +180,7 @@ class InvoiceLine:
             or self.currency.code != first.currency
             or self.duration_microseconds != expected_duration
             or self.exact_amount != expected_exact
-            or self.rounded_amount != _round_half_up(expected_exact, self.currency)
+            or self.rounded_amount != round_exact_money_half_up(expected_exact, self.currency)
         ):
             raise InvalidInvoiceDraftError("InvoiceLine derived values are inconsistent")
 
@@ -231,7 +229,7 @@ class InvoiceDraft:
             )
         if any(line.currency != self.currency for line in self.lines):
             raise MixedInvoiceCurrencyError("InvoiceDraft requires exactly one currency")
-        expected_exact = _sum_exact(tuple(line.exact_amount for line in self.lines))
+        expected_exact = sum_exact_money(tuple(line.exact_amount for line in self.lines))
         expected_subtotal = RoundedMoneyAmount(
             currency=self.currency,
             minor_units=sum(line.rounded_amount.minor_units for line in self.lines),
@@ -254,7 +252,8 @@ def _currency_for(code: str) -> InvoiceCurrency:
     return InvoiceCurrency(code=code, decimal_places=precision)
 
 
-def _add_exact(left: ExactMoneyAmount, right: ExactMoneyAmount) -> ExactMoneyAmount:
+def add_exact_money(left: ExactMoneyAmount, right: ExactMoneyAmount) -> ExactMoneyAmount:
+    """Add exact billing amounts without Decimal-context rounding."""
     common_divisor = gcd(left.denominator, right.denominator)
     return ExactMoneyAmount(
         left.numerator * (right.denominator // common_divisor)
@@ -263,14 +262,17 @@ def _add_exact(left: ExactMoneyAmount, right: ExactMoneyAmount) -> ExactMoneyAmo
     )
 
 
-def _sum_exact(amounts: tuple[ExactMoneyAmount, ...]) -> ExactMoneyAmount:
+def sum_exact_money(amounts: tuple[ExactMoneyAmount, ...]) -> ExactMoneyAmount:
+    """Sum exact billing amounts without Decimal-context rounding."""
     total = ExactMoneyAmount(0, 1)
     for amount in amounts:
-        total = _add_exact(total, amount)
+        total = add_exact_money(total, amount)
     return total
 
 
-def _round_half_up(amount: ExactMoneyAmount, currency: InvoiceCurrency) -> RoundedMoneyAmount:
+def round_exact_money_half_up(
+    amount: ExactMoneyAmount, currency: InvoiceCurrency
+) -> RoundedMoneyAmount:
     """Round a nonnegative exact amount once, without Decimal context involvement."""
     if amount.numerator < 0:
         raise UnsupportedNegativeInvoiceAmountError(
@@ -321,7 +323,7 @@ def _build_line(value: InvoiceLineInput, currency: InvoiceCurrency) -> InvoiceLi
             key=_allocation_order,
         )
     )
-    exact_amount = _sum_exact(tuple(item.exact_amount for item in allocations))
+    exact_amount = sum_exact_money(tuple(item.exact_amount for item in allocations))
     return InvoiceLine(
         id=value.id,
         workspace_id=first.workspace_id,
@@ -334,7 +336,7 @@ def _build_line(value: InvoiceLineInput, currency: InvoiceCurrency) -> InvoiceLi
         allocations=allocations,
         duration_microseconds=sum(item.duration_microseconds for item in allocations),
         exact_amount=exact_amount,
-        rounded_amount=_round_half_up(exact_amount, currency),
+        rounded_amount=round_exact_money_half_up(exact_amount, currency),
     )
 
 
@@ -411,7 +413,7 @@ def build_invoice_draft(
                 "Every InvoiceLine must belong to the draft workspace and client"
             )
     _validate_allocations(lines)
-    exact_subtotal = _sum_exact(tuple(line.exact_amount for line in lines))
+    exact_subtotal = sum_exact_money(tuple(line.exact_amount for line in lines))
     subtotal = RoundedMoneyAmount(
         currency=currency,
         minor_units=sum(line.rounded_amount.minor_units for line in lines),

@@ -53,7 +53,7 @@ Each backend module separates `domain/`, `application/`, `adapters/`, and `api/`
 | Clients | Clients, projects, tasks, and their relationships |
 | Calendar | Connections, internal source-event records, synchronization, classification rules and suggestions |
 | Time tracking | Editable/classifiable time entries, source reconciliation, calendar/work interval duration, local-day splitting; detailed review workflow unresolved |
-| Billing | Current legal billing profiles and invoice fiscal/payment defaults, effective-dated rates, pricing/rate-boundary splitting, billing calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
+| Billing | Current legal billing profiles and invoice fiscal/payment defaults, effective-dated rates, pricing/rate-boundary splitting, exact pricing and VAT calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
 | Delivery | Scheduling, provider interaction, delivery attempts and outcomes |
 | Audit | Append-only records of important state changes |
 
@@ -79,6 +79,7 @@ Google Calendar adapter
   → editable TimeEntry
   → Billing calculation
   → Invoice draft
+  → Deterministic VAT calculation
   → Freelancer review and approval of exact revision and frozen artifact
   → Delivery of frozen approved artifact
 ```
@@ -102,6 +103,13 @@ defaults used by a future issuance operation. VAT identity in a billing profile 
 select the VAT regime. Issuance must derive and snapshot the exact applicable tax,
 payment, statutory wording, operation-category, and VAT-on-debits facts; historical
 documents must never read those facts back from the live settings row.
+
+The pure VAT engine consumes an immutable InvoiceDraft and workspace-matching fiscal settings.
+It does not change line rounding: rounded invoice-line HT amounts form rate-group bases, and exact
+rational VAT is rounded once per distinct rate subtotal with the explicit HALF_UP invoice policy.
+It returns reconciled HT, VAT, and TTC totals plus exact source amounts, group rates, line identity,
+and franchise treatment for audit. The engine is independent from persistence and issuance; a
+future issued invoice must snapshot the exact calculation and settings it used.
 
 InvoiceDraft modifications insert complete immutable revisions. A logical invoice head is
 locked transactionally when allocating its next monotonically increasing revision number;
