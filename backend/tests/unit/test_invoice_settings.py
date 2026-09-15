@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 from freelanceflow.modules.billing.domain.invoice_settings import (
+    BillingTimezone,
     EarlyPaymentDiscount,
     EarlyPaymentDiscountKind,
     FiscalSettings,
@@ -90,6 +91,16 @@ def test_taxable_configuration_preserves_exact_vat_rate_and_debits_choice() -> N
     assert str(fiscal.default_vat_rate_percent) == "20.000"
     assert fiscal.franchise_invoice_mention is None
     assert fiscal.vat_on_debits is True
+
+
+def test_workspace_billing_timezone_is_explicit_and_optional_for_compatibility() -> None:
+    legacy_compatible = settings()
+    configured = settings(billing_timezone=BillingTimezone("Europe/Paris"))
+
+    assert legacy_compatible.billing_timezone is None
+    assert configured.billing_timezone == BillingTimezone("Europe/Paris")
+    with pytest.raises(InvalidInvoiceSettings, match="Billing timezone"):
+        replace(configured, billing_timezone=cast(Any, "Europe/Paris"))
 
 
 @pytest.mark.parametrize(

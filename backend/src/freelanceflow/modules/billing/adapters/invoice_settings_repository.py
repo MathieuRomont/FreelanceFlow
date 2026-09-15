@@ -9,6 +9,7 @@ from freelanceflow.modules.billing.adapters.invoice_settings_models import (
     WorkspaceInvoiceSettingsRow,
 )
 from freelanceflow.modules.billing.domain.invoice_settings import (
+    BillingTimezone,
     EarlyPaymentDiscount,
     EarlyPaymentDiscountKind,
     FiscalSettings,
@@ -41,6 +42,9 @@ def _values(value: WorkspaceInvoiceSettings) -> dict[str, object]:
         ),
         "recovery_indemnity_policy": value.recovery_indemnity_policy.value,
         "operation_category": value.operation_category.value,
+        "billing_timezone": (
+            value.billing_timezone.name if value.billing_timezone is not None else None
+        ),
     }
 
 
@@ -69,6 +73,9 @@ def _to_domain(row: WorkspaceInvoiceSettingsRow) -> WorkspaceInvoiceSettings:
         late_payment_penalty_annual_rate_percent=(row.late_payment_penalty_annual_rate_percent),
         recovery_indemnity_policy=RecoveryIndemnityPolicy(row.recovery_indemnity_policy),
         operation_category=InvoiceOperationCategory(row.operation_category),
+        billing_timezone=(
+            BillingTimezone(row.billing_timezone) if row.billing_timezone is not None else None
+        ),
     )
 
 

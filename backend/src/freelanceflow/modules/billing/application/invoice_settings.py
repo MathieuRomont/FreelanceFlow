@@ -6,6 +6,7 @@ from typing import Protocol
 from uuid import UUID
 
 from freelanceflow.modules.billing.domain.invoice_settings import (
+    BillingTimezone,
     EarlyPaymentDiscount,
     EarlyPaymentDiscountKind,
     FiscalSettings,
@@ -57,6 +58,7 @@ class WorkspaceInvoiceSettingsData:
     late_payment_penalty_annual_rate_percent: str
     recovery_indemnity_policy: RecoveryIndemnityPolicy
     operation_category: InvoiceOperationCategory
+    billing_timezone: str | None = None
 
 
 class InvoiceSettingsStore(Protocol):
@@ -106,6 +108,9 @@ def _build_settings(
         late_payment_penalty_annual_rate_percent=late_rate,
         recovery_indemnity_policy=data.recovery_indemnity_policy,
         operation_category=data.operation_category,
+        billing_timezone=(
+            BillingTimezone(data.billing_timezone) if data.billing_timezone is not None else None
+        ),
     )
 
 

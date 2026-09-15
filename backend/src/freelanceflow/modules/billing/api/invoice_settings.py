@@ -86,6 +86,7 @@ class WorkspaceInvoiceSettingsRequest(BaseModel):
     late_payment_penalty_annual_rate_percent: str
     recovery_indemnity_policy: RecoveryIndemnityPolicy
     operation_category: InvoiceOperationCategory
+    billing_timezone: str | None = None
 
     def to_application(self) -> WorkspaceInvoiceSettingsData:
         return WorkspaceInvoiceSettingsData(
@@ -97,6 +98,7 @@ class WorkspaceInvoiceSettingsRequest(BaseModel):
             ),
             recovery_indemnity_policy=self.recovery_indemnity_policy,
             operation_category=self.operation_category,
+            billing_timezone=self.billing_timezone,
         )
 
 
@@ -155,6 +157,7 @@ class WorkspaceInvoiceSettingsResponse(BaseModel):
     recovery_indemnity_currency: str
     recovery_indemnity_minor_units: int
     operation_category: InvoiceOperationCategory
+    billing_timezone: str | None
 
     @classmethod
     def from_domain(cls, value: WorkspaceInvoiceSettings) -> "WorkspaceInvoiceSettingsResponse":
@@ -172,6 +175,9 @@ class WorkspaceInvoiceSettingsResponse(BaseModel):
             recovery_indemnity_currency=value.recovery_indemnity_currency,
             recovery_indemnity_minor_units=value.recovery_indemnity_minor_units,
             operation_category=value.operation_category,
+            billing_timezone=(
+                value.billing_timezone.name if value.billing_timezone is not None else None
+            ),
         )
 
 

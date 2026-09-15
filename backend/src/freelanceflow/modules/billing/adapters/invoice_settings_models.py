@@ -67,6 +67,10 @@ class WorkspaceInvoiceSettingsRow(Base):
             "operation_category = 'services'",
             name="supported_operation_category",
         ),
+        CheckConstraint(
+            "billing_timezone IS NULL OR length(btrim(billing_timezone)) > 0",
+            name="nonblank_billing_timezone",
+        ),
     )
 
     workspace_id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -82,3 +86,4 @@ class WorkspaceInvoiceSettingsRow(Base):
     late_payment_penalty_annual_rate_percent: Mapped[Decimal] = mapped_column(Numeric())
     recovery_indemnity_policy: Mapped[str]
     operation_category: Mapped[str]
+    billing_timezone: Mapped[str | None]
