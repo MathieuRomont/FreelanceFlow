@@ -27,6 +27,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | Invoice | Billing period metadata, explicit currency precision snapshot, issuer/client snapshots, content version, exact pre-rounding subtotal, rounded totals, lifecycle information, artifact reference | One currency; tax-free MVP total is the sum of rounded lines; modifications create complete immutable revisions under one logical identity |
 | InvoiceLine | Exact duration, applied hourly rate and RateAgreement identity, exact rational amount, rounded integer minor-unit amount, and source allocations | Caller-grouped compatible segments are summed exactly and rounded once using the confirmed policy; snapshots calculations rather than reading mutable current rates |
 | InvoiceAllocation | Association between a billed TimeEntry segment and an invoice line, including allocated interval/quantity and provenance | Prevents duplicate billing of the same time; traces a line back to allocated work in the invoice workspace and client, with compatible project/task relationships and invoice currency/rate context; reservation/release policy remains unresolved |
+| InvoiceTaxCalculation | Pure VAT result with exact invoice revision/context, fiscal treatment, exact source HT, rounded HT bases grouped by exact rate, exact and rounded VAT, and reconciled HT/VAT/TTC totals | Every line occurs in exactly one group; VAT is rounded once per rate subtotal with explicit HALF_UP; franchise remains a distinct zero-VAT legal treatment; future issuance must snapshot the result rather than depend on mutable settings |
 | InvoiceArtifact | Application-generated identity, exact InvoiceDraft revision identity, media type, immutable bytes, exact byte size, lowercase hexadecimal SHA-256 digest, creation instant | Belongs to one workspace and one exact persisted revision; content-derived size and digest are server-authoritative; later revisions never rebind it |
 | InvoiceApproval | Application-generated identity, workspace, exact invoice ID/revision, exact artifact ID/SHA-256 snapshot, approval timestamp | Immutable and unique per invoice revision; no actor is recorded before authentication exists; later revisions do not inherit it and a different artifact cannot replace it |
 | InvoiceDelivery | Application-generated identity, exact immutable approval/revision/artifact/digest snapshot, requested time, provider-neutral message snapshot, state, ordered attempts | One logical delivery per approval; pending claims are atomic; the message and frozen artifact are stable across retries; provider-accepted `sent` and definitive `failed` are terminal; later revisions cannot retarget it |
@@ -52,6 +53,7 @@ Workspace → CalendarConnection → CalendarEvent → TimeEntry
 Workspace → ClassificationRule → suggested TimeEntry assignment
 Client / Project → RateAgreement
 TimeEntry → InvoiceAllocation → InvoiceLine → Invoice content version
+Invoice content version + WorkspaceInvoiceSettings → InvoiceTaxCalculation
 Invoice content version → InvoiceApproval → InvoiceDelivery → InvoiceDeliveryAttempt
 Verified provider event → optional InvoiceDeliveryProviderEventMatch → InvoiceDelivery
 Important changes → AuditEvent
@@ -106,6 +108,15 @@ inventing an issue date or due date. The current hourly-services MVP records the
 invoice operation category as services. A future issuance operation must resolve these
 defaults into an immutable snapshot, including the exact rate, dates, amounts, and wording
 actually placed on that invoice.
+
+The deterministic VAT calculation remains separate from `InvoiceDraft` construction and from
+issuance. For taxable invoices it groups already-rounded invoice-line HT amounts by exact VAT
+rate, calculates each group's VAT as an exact rational amount, and applies the explicit invoice
+HALF_UP policy once per rate group. HT is the sum of rounded lines, VAT is the sum of rounded
+groups, and TTC is their exact integer-minor-unit sum. Franchise en base instead preserves its
+legal basis and canonical wording with zero VAT and no artificial zero-percent rate. Exact source
+HT and line membership remain available for audit. Mutable settings and this calculation result
+are not historical invoice truth until a future issuance operation snapshots them.
 
 InvoiceDraft revisions are complete immutable snapshots. Revision 1 creates the logical
 invoice identity; later modifications preserve its workspace, client, and currency and

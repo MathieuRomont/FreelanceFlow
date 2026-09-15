@@ -69,12 +69,22 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - There is at most one mutable current `WorkspaceInvoiceSettings` configuration per workspace. It is an issuance default, not historical invoice truth. Creation, retrieval, and full replacement are explicit workspace-scoped operations. A future issuance operation must snapshot every setting and derived invoice fact it uses; changing current settings never rewrites an InvoiceDraft revision or other invoice history.
 - VAT identification and VAT charging regime are independent. A workspace VAT number being present or absent does not select a regime. The current France-first regimes are `franchise_en_base` and `taxable`.
 - Franchise en base requires one structured legal basis: CGI article 293 B, CGI article 293 B bis, or article 284 of Directive 2006/112/EC. It carries no default VAT rate and cannot select VAT on debits. The canonical invoice mention is derived from that semantic basis and must be copied as exact text into the future issuance snapshot. Under the current BOFiP rule, a franchise invoice must not show VAT.
-- Taxable configuration requires an exact, finite, nonnegative Decimal default VAT percentage no greater than 100 and no franchise basis. The rate is a mutable default only; the rate and tax treatment actually applied to each future invoice must be explicit and snapshotted. This slice does not calculate VAT.
+- Taxable configuration requires an exact, finite, nonnegative Decimal default VAT percentage no greater than 100 and no franchise basis. The rate is a mutable default only; the rate and tax treatment actually applied to each future invoice must be explicit and snapshotted.
 - VAT-on-debits is an explicit boolean fiscal choice for a taxable workspace. The current hourly-billing operation category is explicitly `services`; goods and mixed operations are not silently inferred or accepted.
 - Payment due terms are structured as due on issue, 1 to 60 calendar days after issue, invoice-month-end plus 45 days, or end-of-month after 45 days. The two legally recognized 45-days-end-of-month calculations remain distinct. Settings do not calculate or store an actual due date because no invoice issue date exists yet.
 - Early-payment discount terms are either explicitly absent or an exact, positive Decimal percentage payable within a positive number of calendar days after issue. Future issuance must snapshot the exact wording used, including the required statement when no discount applies; arbitrary wording is not the semantic source of truth.
 - The late-payment penalty is an exact, finite, positive Decimal annual percentage. FreelanceFlow validates this representation but does not assert that a configured rate satisfies the legally changing minimum on a future issue date; issuance must validate and snapshot the applicable facts.
 - The current France-first B2B recovery policy is explicit and fixed at EUR 40.00 (`4000` minor units). It is not caller-supplied money and does not calculate or assess a recovery fee in this slice.
+
+### Deterministic VAT calculation (issue #40)
+
+- VAT calculation is a pure Billing-domain operation over one immutable `InvoiceDraft` revision and workspace-matching fiscal settings. It does not persist an issued invoice and never infers the VAT regime from a VAT identification number.
+- Franchise en base remains a semantic fiscal treatment with its structured legal basis and canonical mention. It is not represented as an ordinary zero-percent rate; its VAT amount is explicitly zero and no rate assignment is accepted.
+- A taxable calculation uses either the configured exact Decimal default rate for every line or an explicit, complete, unique line-to-rate assignment. Exact finite rates from 0 through 100 percent are supported. Multiple rate groups are represented separately and ordered deterministically.
+- The taxable base for each distinct VAT rate is the sum of the already-rounded invoice-line HT amounts in that group. Existing line rounding is unchanged. Exact pre-line-rounding source HT remains separately available for audit but is not substituted for the legally presented line-net base.
+- VAT is calculated exactly as `rate-group HT base × rate / 100`, using integer/rational arithmetic without float or ambient Decimal context, then rounded exactly once per rate group to the invoice currency precision using explicit `ROUND_HALF_UP` semantics. VAT is not rounded independently per source segment or invoice line.
+- Invoice HT is the sum of rounded line amounts, VAT is the sum of rounded VAT-rate groups, and TTC is integer-minor-unit HT plus VAT. These totals and every line's membership in exactly one VAT group must reconcile.
+- The tax result retains the exact invoice/revision/workspace/client identity, currency precision, fiscal treatment, exact source HT, rounded bases, exact pre-rounding VAT, rounded VAT, line membership, rates, and rounding policy for later issuance snapshotting.
 
 ### Invoice content and approval
 
@@ -124,8 +134,8 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
 
-The pure Invoice Draft scope does not implement VAT or tax calculation, legal invoice
-numbering, negative-invoice or credit-note semantics, corrections,
+The pure Invoice Draft remains tax-independent; the separate pure VAT calculation does not
+implement issuance, legal invoice numbering, negative-invoice or credit-note semantics, corrections,
 PDF rendering, billing-period membership, or automatic line descriptions.
 Their rules remain unresolved or belong to later explicitly scoped work.
 
@@ -149,7 +159,7 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | --- | --- |
 | Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |
 | Future duration adjustments | Raw TimeEntry elapsed duration is the confirmed MVP billable duration. Any future break, pause, or manual adjustment behavior requires a new confirmed rule. |
-| Tax and later monetary rounding | Tax-free MVP invoice lines use the confirmed EUR precision, line-level `ROUND_HALF_UP`, and sum-of-rounded-lines policy above. Tax calculation and its line/subtotal/total reconciliation policy remain UNRESOLVED. Other currencies require an explicitly confirmed supported precision before use. |
+| Tax and later monetary rounding | Invoice lines and rate-group VAT use the confirmed EUR precision and explicit `ROUND_HALF_UP` policies above. Other currencies require an explicitly confirmed supported precision before use. Negative invoices and credit notes remain unresolved. |
 | Rate boundaries | Automatic pricing-boundary segmentation is blocked by the unresolved billing-timezone/business-date policy. Date-range inclusivity and open-ended agreements are confirmed above; callers may provide already-prepared segments with an explicit business date. |
 | Rate edits and validation | Resolution rejects conflicts only at the highest applicable precedence level. Whether overlapping agreements should be rejected globally at creation/edit time remains UNRESOLVED. How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
 | Time review and eligibility | What optional TimeEntry review workflow is needed? Which edits affect eligibility? When do ambiguous, unclassified, or unbillable entries block generation versus get explicitly excluded, and how is exclusion shown? Individual entry approval is not required to generate a draft. |
@@ -158,7 +168,7 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | Billing periods and presentation grouping | Are periods date-inclusive or half-open? Billing-period metadata must not determine allocation membership yet. Caller-defined compatible segment groups are confirmed for the pure draft domain, but automatic grouping and line descriptions by task, day, project, title, or other presentation fields remain UNRESOLVED. |
 | Allocations | Do drafts reserve time? When is a reservation released? Is partial billing supported, and how are overlaps prevented transactionally? |
 | Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
-| Tax and legal scope | France-first current party profiles and the two current VAT regimes/defaults are confirmed above. Tax calculation and rounding; multiple VAT rates; exemptions other than franchise en base; reverse charge; intra-EU/export rules; goods and mixed operation categories; goods-delivery addresses; sector/activity registrations or insurance; exact issuance-time statutory validation; and retention rules remain unresolved. Settings are never issued-invoice history. |
+| Tax and legal scope | France-first current party profiles, VAT settings, franchise treatment, and deterministic ordinary taxable VAT calculation are confirmed above. Exemptions other than franchise en base; reverse charge; intra-EU/export rules; goods and mixed operation categories; goods-delivery addresses; sector/activity registrations or insurance; exact issuance-time statutory validation; and retention rules remain unresolved. Settings and pure calculations are never issued-invoice history. |
 | Numbering and dates | When is an invoice number assigned? How are numbering scope, issue dates, due dates, and voided numbers handled? |
 | Delivery request details | The sender, recipient, subject, body, and attachment filename supplied to the worker are frozen before the first provider call and cannot change across retries. How are those values selected, when may a user replace an unsent delivery with a new logical delivery, and how is scheduling represented? Immutable invoice revision/artifact content cannot be edited in place. |
 | Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which Resend polling/reconciliation operation or additional verified correlation key is authoritative when an uncertain attempt never persisted a provider message ID, or after the provider's idempotency-retention window expires? The stable delivery key and webhook history are confirmed, but exactly-once delivery is not claimed. |
