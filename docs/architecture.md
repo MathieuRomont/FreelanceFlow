@@ -53,7 +53,7 @@ Each backend module separates `domain/`, `application/`, `adapters/`, and `api/`
 | Clients | Clients, projects, tasks, and their relationships |
 | Calendar | Connections, internal source-event records, synchronization, classification rules and suggestions |
 | Time tracking | Editable/classifiable time entries, source reconciliation, calendar/work interval duration, local-day splitting; detailed review workflow unresolved |
-| Billing | Current legal billing profiles, effective-dated rates, pricing/rate-boundary splitting, billing calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
+| Billing | Current legal billing profiles and invoice fiscal/payment defaults, effective-dated rates, pricing/rate-boundary splitting, billing calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
 | Delivery | Scheduling, provider interaction, delivery attempts and outcomes |
 | Audit | Append-only records of important state changes |
 
@@ -95,6 +95,13 @@ profile. The latter is bound to the existing Client ownership chain but has a le
 separate from `Client.name`. Future invoice issuance must copy all legal values it uses into
 the immutable invoice revision or issuance snapshot; profile foreign keys must never be the
 source of historical invoice truth.
+
+Workspace invoice settings are a separate, mutable, one-per-workspace Billing
+configuration. They describe the current France-first VAT regime and structured payment
+defaults used by a future issuance operation. VAT identity in a billing profile does not
+select the VAT regime. Issuance must derive and snapshot the exact applicable tax,
+payment, statutory wording, operation-category, and VAT-on-debits facts; historical
+documents must never read those facts back from the live settings row.
 
 InvoiceDraft modifications insert complete immutable revisions. A logical invoice head is
 locked transactionally when allocating its next monotonically increasing revision number;

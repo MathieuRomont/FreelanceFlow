@@ -14,6 +14,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | --- | --- | --- |
 | Workspace | Freelancer ownership boundary, billing identity, billing timezone, default currency | One freelancer initially; default currency does not permit mixed currencies within an invoice |
 | WorkspaceBillingProfile | Current seller legal identity, entity kind, SIREN/SIRET, optional French VAT identity, structured legal and optional billing addresses, and company form/capital where applicable | Mutable one-per-workspace configuration; France-first seller address; never historical invoice truth |
+| WorkspaceInvoiceSettings | Current France-first VAT regime, franchise legal basis or default VAT rate, VAT-on-debits choice, structured payment due rule, early-payment discount, late-payment penalty rate, recovery-indemnity policy, and operation category | Mutable one-per-workspace issuance defaults; VAT identity is independent; every value used must be snapshotted into future issued-invoice history |
 | Client | Customer display name and ownership identity | Belongs to a workspace; display name is not legal identity and changes do not rewrite invoice snapshots |
 | ClientBillingProfile | Current buyer legal name distinct from Client display name, optional trading name, structured legal and optional billing addresses, French SIREN where applicable, and optional French VAT identity | Mutable one-per-client configuration; inherits exact client/workspace ownership; never historical invoice truth |
 | Project | Client work grouping, name, active status | Belongs to one client in the same workspace; may have project-specific rates |
@@ -45,6 +46,7 @@ Issue #7 adds explicit immutable operations: `classify_time_entry(entry, *, clie
 ```text
 Workspace → Client → Project → Task
 Workspace → WorkspaceBillingProfile
+Workspace → WorkspaceInvoiceSettings
 Workspace → Client → ClientBillingProfile
 Workspace → CalendarConnection → CalendarEvent → TimeEntry
 Workspace → ClassificationRule → suggested TimeEntry assignment
@@ -95,6 +97,15 @@ display name and is not promoted to a legal name. Local SIREN/SIRET/French-VAT c
 only shape, checksum where defined, and consistency between identifiers; they do not verify
 registration. A future issued invoice must snapshot the seller and buyer legal identity and
 addresses it used, so later profile updates cannot change historical reconstruction.
+
+`WorkspaceInvoiceSettings` likewise contains current defaults rather than invoice facts.
+The VAT regime is explicitly either `franchise_en_base` with a structured statutory basis,
+or `taxable` with an exact Decimal default VAT percentage; it is never inferred from a VAT
+identification number. Payment terms preserve the selected invoice-date-based rule without
+inventing an issue date or due date. The current hourly-services MVP records the electronic-
+invoice operation category as services. A future issuance operation must resolve these
+defaults into an immutable snapshot, including the exact rate, dates, amounts, and wording
+actually placed on that invoice.
 
 InvoiceDraft revisions are complete immutable snapshots. Revision 1 creates the logical
 invoice identity; later modifications preserve its workspace, client, and currency and
