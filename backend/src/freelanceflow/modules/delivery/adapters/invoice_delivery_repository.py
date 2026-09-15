@@ -1,5 +1,6 @@
 """PostgreSQL persistence for durable invoice delivery state."""
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -12,6 +13,12 @@ from freelanceflow.modules.billing.adapters.models import (
 from freelanceflow.modules.delivery.adapters.models import (
     InvoiceDeliveryAttemptRow,
     InvoiceDeliveryRow,
+)
+from freelanceflow.modules.delivery.adapters.provider_event_repository import (
+    reconcile_provider_events,
+)
+from freelanceflow.modules.delivery.adapters.provider_message_lock import (
+    lock_provider_message_id,
 )
 from freelanceflow.modules.delivery.application.email_provider import (
     FrozenInvoiceAttachment,
@@ -187,6 +194,24 @@ class InvoiceDeliveryRepository:
             sha256=row.sha256,
             media_type=row.media_type,
             content=row.content,
+        )
+
+    def lock_provider_message_id(self, provider_message_id: str) -> None:
+        lock_provider_message_id(self.session, provider_message_id)
+
+    def reconcile_provider_events(
+        self,
+        *,
+        delivery_id: UUID,
+        provider_message_id: str,
+        correlated_at: datetime,
+    ) -> None:
+        reconcile_provider_events(
+            self.session,
+            delivery_id=delivery_id,
+            workspace_id=self.workspace_id,
+            provider_message_id=provider_message_id,
+            correlated_at=correlated_at,
         )
 
     def save_message(self, value: InvoiceDelivery) -> None:

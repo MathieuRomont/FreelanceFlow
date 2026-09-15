@@ -28,6 +28,8 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | InvoiceApproval | Application-generated identity, workspace, exact invoice ID/revision, exact artifact ID/SHA-256 snapshot, approval timestamp | Immutable and unique per invoice revision; no actor is recorded before authentication exists; later revisions do not inherit it and a different artifact cannot replace it |
 | InvoiceDelivery | Application-generated identity, exact immutable approval/revision/artifact/digest snapshot, requested time, provider-neutral message snapshot, state, ordered attempts | One logical delivery per approval; pending claims are atomic; the message and frozen artifact are stable across retries; provider-accepted `sent` and definitive `failed` are terminal; later revisions cannot retarget it |
 | InvoiceDeliveryAttempt | Application-generated claim token, delivery identity, sequence, start/completion times, outcome, safe failure reason, optional accepted provider message ID | Append-only history; at most one open attempt per delivery; only the active token may finish the claim; provider-specific errors do not cross the adapter boundary |
+| InvoiceDeliveryProviderEvent | Application-generated identity, signed provider event identity, optional provider message ID, raw and semantic event type, provider occurrence time, first receipt time, exact raw-payload SHA-256 | Immutable verified fact; signed event identity is unique; supported delivery events require a message ID; secrets, signatures, and raw payloads are not persisted |
+| InvoiceDeliveryProviderEventMatch | Provider-event identity, exact delivery/workspace/provider-message identity, correlation time | Separate append-only correlation; absent for unmatched events; composite foreign keys ensure the event and accepted attempt carry the same provider message ID |
 | AuditEvent | Actor, timestamp, entity/version, action, relevant change information, correlation identifier | Append-only; records important changes without secrets or unnecessary sensitive source payloads |
 
 Issue #5 implements Task as a category belonging to exactly one Project, carrying client and workspace ownership through that project. TimeEntry explicitly carries workspace ownership, aware start/end timestamps, a billable flag, and optional client/project/task references. Classification must form a consistent ownership chain: a project requires its selected client, and a task requires its selected project, all within the entry workspace.
@@ -45,6 +47,7 @@ Workspace → ClassificationRule → suggested TimeEntry assignment
 Client / Project → RateAgreement
 TimeEntry → InvoiceAllocation → InvoiceLine → Invoice content version
 Invoice content version → InvoiceApproval → InvoiceDelivery → InvoiceDeliveryAttempt
+Verified provider event → optional InvoiceDeliveryProviderEventMatch → InvoiceDelivery
 Important changes → AuditEvent
 ```
 
@@ -70,8 +73,16 @@ target and never retarget an existing delivery. Sender, recipient, subject, body
 attachment filename are provider-neutral values frozen before the first external call and
 cannot change on retry. The exact stored artifact bytes and media type are supplied through
 the application port to the Resend adapter. `sent` means provider acceptance, not recipient
-delivery. Scheduling, webhook/delivery-confirmation semantics, deliberate resend, and
-abandoned-claim recovery remain unresolved.
+delivery. Scheduling, deliberate resend, derived downstream status, and abandoned-claim
+recovery remain unresolved.
+
+Delivery-relevant Resend webhooks are verified over their exact raw request bytes before
+parsing. The append-only provider-event history distinguishes provider accepted, recipient
+mail-server delivered, delayed, bounced, provider failed, and complained facts. Unsupported
+verified event types are retained without changing delivery state. Events can arrive more
+than once or out of order; signed provider event identity deduplicates retries, and no
+mutable downstream status is derived in this slice. A valid event without a locally known
+provider message ID remains unmatched until deterministic correlation becomes possible.
 
 Approval applies to an exact invoice revision and frozen artifact, and delivery must use that corresponding artifact. Invoice versions must retain the calculation inputs and results needed to explain the bill. Historical approvals and delivery attempts remain auditable after edits, failures, or corrections.
 

@@ -60,6 +60,14 @@ class InvoiceDeliveryStore(Protocol):
     def lock_next_pending(self) -> InvoiceDelivery | None: ...
     def lock(self, delivery_id: UUID) -> InvoiceDelivery | None: ...
     def get_frozen_artifact(self, artifact_id: UUID) -> FrozenInvoiceAttachment | None: ...
+    def lock_provider_message_id(self, provider_message_id: str) -> None: ...
+    def reconcile_provider_events(
+        self,
+        *,
+        delivery_id: UUID,
+        provider_message_id: str,
+        correlated_at: datetime,
+    ) -> None: ...
     def save_message(self, value: InvoiceDelivery) -> None: ...
     def save_claim(self, value: InvoiceDelivery) -> None: ...
     def save_failure(self, value: InvoiceDelivery) -> None: ...
@@ -156,13 +164,20 @@ class InvoiceDeliveryService:
             delivery = store.lock(delivery_id)
             if delivery is None:
                 raise InvoiceDeliveryResourceNotFound("Invoice delivery resource not found")
+            store.lock_provider_message_id(provider_message_id)
+            sent_at = self.clock()
             sent = mark_invoice_delivery_sent(
                 delivery,
                 attempt_id=attempt_id,
-                sent_at=self.clock(),
+                sent_at=sent_at,
                 provider_message_id=provider_message_id,
             )
             store.save_sent(sent)
+            store.reconcile_provider_events(
+                delivery_id=delivery_id,
+                provider_message_id=provider_message_id,
+                correlated_at=sent_at,
+            )
         return sent
 
     def record_rejection(

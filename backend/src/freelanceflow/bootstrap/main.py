@@ -49,14 +49,31 @@ from freelanceflow.modules.clients.application.projects_tasks import ProjectTask
 from freelanceflow.modules.delivery.adapters.invoice_delivery_transactions import (
     SqlAlchemyInvoiceDeliveryTransaction,
 )
+from freelanceflow.modules.delivery.adapters.provider_event_transactions import (
+    SqlAlchemyInvoiceDeliveryProviderEventTransaction,
+)
+from freelanceflow.modules.delivery.adapters.resend_webhooks import (
+    ResendWebhookVerifier,
+    load_resend_webhook_secret,
+)
 from freelanceflow.modules.delivery.api.invoice_deliveries import (
     get_invoice_delivery_service,
 )
 from freelanceflow.modules.delivery.api.invoice_deliveries import (
     router as invoice_delivery_router,
 )
+from freelanceflow.modules.delivery.api.provider_events import (
+    get_email_provider_webhook_verifier,
+    get_invoice_delivery_provider_event_service,
+)
+from freelanceflow.modules.delivery.api.provider_events import (
+    router as invoice_delivery_provider_event_router,
+)
 from freelanceflow.modules.delivery.application.invoice_deliveries import (
     InvoiceDeliveryService,
+)
+from freelanceflow.modules.delivery.application.provider_events import (
+    InvoiceDeliveryProviderEventService,
 )
 from freelanceflow.modules.time_tracking.adapters.repository import TimeEntryRepository
 from freelanceflow.modules.time_tracking.adapters.transactions import (
@@ -100,6 +117,13 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             invoice_delivery_service = InvoiceDeliveryService(
                 SqlAlchemyInvoiceDeliveryTransaction(configured_engine)
             )
+            invoice_delivery_provider_event_service = (
+                InvoiceDeliveryProviderEventService(
+                    SqlAlchemyInvoiceDeliveryProviderEventTransaction(
+                        configured_engine
+                    )
+                )
+            )
             application.dependency_overrides[get_client_service] = lambda: service
             application.dependency_overrides[get_project_task_service] = (
                 lambda: project_task_service
@@ -122,6 +146,16 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides[get_invoice_delivery_service] = (
                 lambda: invoice_delivery_service
             )
+            application.dependency_overrides[
+                get_invoice_delivery_provider_event_service
+            ] = lambda: invoice_delivery_provider_event_service
+            if os.environ.get("RESEND_WEBHOOK_SECRET", "").strip():
+                resend_webhook_verifier = ResendWebhookVerifier(
+                    load_resend_webhook_secret()
+                )
+                application.dependency_overrides[
+                    get_email_provider_webhook_verifier
+                ] = lambda: resend_webhook_verifier
         try:
             yield
         finally:
@@ -133,6 +167,12 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides.pop(get_invoice_artifact_service, None)
             application.dependency_overrides.pop(get_invoice_approval_service, None)
             application.dependency_overrides.pop(get_invoice_delivery_service, None)
+            application.dependency_overrides.pop(
+                get_invoice_delivery_provider_event_service, None
+            )
+            application.dependency_overrides.pop(
+                get_email_provider_webhook_verifier, None
+            )
             if owned_engine is not None:
                 owned_engine.dispose()
 
@@ -145,6 +185,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     application.include_router(invoice_artifact_router)
     application.include_router(invoice_approval_router)
     application.include_router(invoice_delivery_router)
+    application.include_router(invoice_delivery_provider_event_router)
 
     @application.get("/health")
     def health() -> dict[str, str]:

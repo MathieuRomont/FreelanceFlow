@@ -121,6 +121,30 @@ retryable failure returns to `pending`, and an unknown acceptance result remains
 `in_progress` for reconciliation. A later invoice revision is a separate immutable snapshot
 and cannot alter the historical delivery target.
 
+Resend webhook ingestion is a separate authenticated ingress at `/webhooks/resend`.
+The API reads the request body as exact bytes and passes it with `svix-id`,
+`svix-timestamp`, and `svix-signature` to the official Svix verifier. Only after
+verification does the Resend adapter parse and translate the payload into a minimal
+provider-neutral event. Verified events and their optional delivery correlations are
+stored in separate append-only tables. The first receipt time and exact raw-payload
+SHA-256 are retained, while signatures, secrets, full message content, and the raw
+webhook payload are not persisted.
+
+The signed `svix-id` is the webhook deduplication identity. PostgreSQL conflict-safe
+insertion makes retries and manual replays idempotent, and reuse of an identity with
+different verified content is rejected. Correlation uses the exact provider message ID
+stored on the accepted send attempt. Provider acceptance persistence and webhook
+ingestion acquire the same transaction-scoped advisory lock for that provider message
+ID, so an event arriving before or concurrently with acceptance cannot be lost between
+two visibility checks. Unmatched verified events remain durable; the later acceptance
+transaction or a replay can add the immutable match without modifying the event.
+
+Provider events are downstream facts, not transitions of the local send state. In
+particular, delivered, delayed, bounced, provider-failed, and complained events never
+rewrite the historical fact that the provider accepted a delivery. Event arrival order
+is not assumed; audit retrieval orders by provider occurrence time with stable identity
+tie-breakers rather than inventing a mutable aggregate-status precedence.
+
 ## Worker and external operations
 
 A background worker handles calendar synchronization, document work, and scheduled email delivery through application use cases. It uses persisted jobs, retry metadata, and stable operation identifiers.
@@ -150,4 +174,4 @@ transaction can make a remote send atomic or claim exactly-once delivery.
 
 Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering. Frozen artifact bytes use PostgreSQL `BYTEA` for the MVP. A narrow provider-neutral email port belongs to the Delivery application layer; the Resend HTTP adapter and environment-backed credentials belong to adapters. The adapter Base64-encodes the already-frozen bytes only for transport and never regenerates invoice content. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports and transports.
 
-Exact rendering libraries and the worker mechanism remain unresolved implementation choices. Resend is the first MVP transactional email adapter; provider failover and webhook processing are out of scope. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
+Exact rendering libraries and the worker mechanism remain unresolved implementation choices. Resend is the first MVP transactional email adapter and its delivery-relevant webhooks are verified and retained; provider failover, polling, automatic ambiguous-send recovery, and webhook-driven marketing analytics remain out of scope. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
