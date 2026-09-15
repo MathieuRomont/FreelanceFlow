@@ -53,7 +53,7 @@ Each backend module separates `domain/`, `application/`, `adapters/`, and `api/`
 | Clients | Clients, projects, tasks, and their relationships |
 | Calendar | Connections, internal source-event records, synchronization, classification rules and suggestions |
 | Time tracking | Editable/classifiable time entries, source reconciliation, calendar/work interval duration, local-day splitting; detailed review workflow unresolved |
-| Billing | Effective-dated rates, pricing/rate-boundary splitting, billing calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
+| Billing | Current legal billing profiles, effective-dated rates, pricing/rate-boundary splitting, billing calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
 | Delivery | Scheduling, provider interaction, delivery attempts and outcomes |
 | Audit | Append-only records of important state changes |
 
@@ -88,6 +88,13 @@ Calendar import and classification produce internal data and suggestions. The fr
 Drafts may be generated from eligible TimeEntries without individually approving every entry. Ambiguous, unclassified, or unbillable entries must block generation or be explicitly excluded. The freelancer reviews the resulting invoice before approval; the detailed TimeEntry review workflow remains unresolved.
 
 Billing resolves effective rates, applies pricing-specific segmentation, calculates exact amounts, and records allocations and invoice snapshots. Calendar events never directly generate invoice lines.
+
+Workspace and client billing profiles are mutable Billing configuration. A workspace has at
+most one current France-first seller profile and a client has at most one current buyer
+profile. The latter is bound to the existing Client ownership chain but has a legal name
+separate from `Client.name`. Future invoice issuance must copy all legal values it uses into
+the immutable invoice revision or issuance snapshot; profile foreign keys must never be the
+source of historical invoice truth.
 
 InvoiceDraft modifications insert complete immutable revisions. A logical invoice head is
 locked transactionally when allocating its next monotonically increasing revision number;

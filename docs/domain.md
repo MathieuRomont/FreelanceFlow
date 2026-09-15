@@ -13,7 +13,9 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | Entity | Responsibility and proposed information | Relationships and invariants |
 | --- | --- | --- |
 | Workspace | Freelancer ownership boundary, billing identity, billing timezone, default currency | One freelancer initially; default currency does not permit mixed currencies within an invoice |
-| Client | Customer name, billing details, recipients, payment terms | Belongs to a workspace; changes do not rewrite invoice snapshots |
+| WorkspaceBillingProfile | Current seller legal identity, entity kind, SIREN/SIRET, optional French VAT identity, structured legal and optional billing addresses, and company form/capital where applicable | Mutable one-per-workspace configuration; France-first seller address; never historical invoice truth |
+| Client | Customer display name and ownership identity | Belongs to a workspace; display name is not legal identity and changes do not rewrite invoice snapshots |
+| ClientBillingProfile | Current buyer legal name distinct from Client display name, optional trading name, structured legal and optional billing addresses, French SIREN where applicable, and optional French VAT identity | Mutable one-per-client configuration; inherits exact client/workspace ownership; never historical invoice truth |
 | Project | Client work grouping, name, active status | Belongs to one client in the same workspace; may have project-specific rates |
 | Task | Optional category of project work | Belongs to a project; distinct from an individual time interval |
 | CalendarConnection | Connected account, selected calendars, credential reference, synchronization cursor/status | Belongs to a workspace; credential storage is protected and excluded from ordinary domain responses |
@@ -42,6 +44,8 @@ Issue #7 adds explicit immutable operations: `classify_time_entry(entry, *, clie
 
 ```text
 Workspace → Client → Project → Task
+Workspace → WorkspaceBillingProfile
+Workspace → Client → ClientBillingProfile
 Workspace → CalendarConnection → CalendarEvent → TimeEntry
 Workspace → ClassificationRule → suggested TimeEntry assignment
 Client / Project → RateAgreement
@@ -85,6 +89,12 @@ mutable downstream status is derived in this slice. A valid event without a loca
 provider message ID remains unmatched until deterministic correlation becomes possible.
 
 Approval applies to an exact invoice revision and frozen artifact, and delivery must use that corresponding artifact. Invoice versions must retain the calculation inputs and results needed to explain the bill. Historical approvals and delivery attempts remain auditable after edits, failures, or corrections.
+
+Legal billing profiles describe only current party configuration. `Client.name` remains a
+display name and is not promoted to a legal name. Local SIREN/SIRET/French-VAT checks prove
+only shape, checksum where defined, and consistency between identifiers; they do not verify
+registration. A future issued invoice must snapshot the seller and buyer legal identity and
+addresses it used, so later profile updates cannot change historical reconstruction.
 
 InvoiceDraft revisions are complete immutable snapshots. Revision 1 creates the logical
 invoice identity; later modifications preserve its workspace, client, and currency and

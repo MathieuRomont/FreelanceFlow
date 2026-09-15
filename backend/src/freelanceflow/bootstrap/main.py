@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
 
+from freelanceflow.modules.billing.adapters.billing_profile_transactions import (
+    SqlAlchemyBillingProfileTransaction,
+)
 from freelanceflow.modules.billing.adapters.invoice_approval_transactions import (
     SqlAlchemyInvoiceApprovalTransaction,
 )
@@ -19,6 +22,10 @@ from freelanceflow.modules.billing.adapters.invoice_draft_transactions import (
 from freelanceflow.modules.billing.adapters.transactions import (
     SqlAlchemyRateAgreementTransaction,
 )
+from freelanceflow.modules.billing.api.billing_profiles import (
+    get_billing_profile_service,
+)
+from freelanceflow.modules.billing.api.billing_profiles import router as billing_profile_router
 from freelanceflow.modules.billing.api.invoice_approvals import (
     get_invoice_approval_service,
 )
@@ -31,6 +38,7 @@ from freelanceflow.modules.billing.api.invoice_drafts import get_invoice_draft_s
 from freelanceflow.modules.billing.api.invoice_drafts import router as invoice_draft_router
 from freelanceflow.modules.billing.api.rate_agreements import get_rate_agreement_service
 from freelanceflow.modules.billing.api.rate_agreements import router as rate_agreement_router
+from freelanceflow.modules.billing.application.billing_profiles import BillingProfileService
 from freelanceflow.modules.billing.application.invoice_approvals import (
     InvoiceApprovalService,
 )
@@ -100,6 +108,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             rate_agreement_service = RateAgreementService(
                 SqlAlchemyRateAgreementTransaction(configured_engine, ClientRepository)
             )
+            billing_profile_service = BillingProfileService(
+                SqlAlchemyBillingProfileTransaction(configured_engine, ClientRepository)
+            )
             time_entry_service = TimeEntryService(
                 SqlAlchemyTimeEntryTransaction(configured_engine, ClientRepository)
             )
@@ -130,6 +141,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             )
             application.dependency_overrides[get_rate_agreement_service] = (
                 lambda: rate_agreement_service
+            )
+            application.dependency_overrides[get_billing_profile_service] = (
+                lambda: billing_profile_service
             )
             application.dependency_overrides[get_time_entry_service] = (
                 lambda: time_entry_service
@@ -162,6 +176,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides.pop(get_client_service, None)
             application.dependency_overrides.pop(get_project_task_service, None)
             application.dependency_overrides.pop(get_rate_agreement_service, None)
+            application.dependency_overrides.pop(get_billing_profile_service, None)
             application.dependency_overrides.pop(get_time_entry_service, None)
             application.dependency_overrides.pop(get_invoice_draft_service, None)
             application.dependency_overrides.pop(get_invoice_artifact_service, None)
@@ -180,6 +195,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     application.include_router(router)
     application.include_router(project_task_router)
     application.include_router(rate_agreement_router)
+    application.include_router(billing_profile_router)
     application.include_router(time_entry_router)
     application.include_router(invoice_draft_router)
     application.include_router(invoice_artifact_router)

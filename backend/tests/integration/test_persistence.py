@@ -313,6 +313,8 @@ def test_migration_cycle() -> None:
             "invoice_delivery_attempts",
             "invoice_delivery_provider_events",
             "invoice_delivery_provider_event_matches",
+            "workspace_billing_profiles",
+            "client_billing_profiles",
             "alembic_version",
         }
         migrate(engine, "check")
