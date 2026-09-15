@@ -69,7 +69,7 @@ bootstrap → concrete composition
 
 Cross-module workflows use explicit application interfaces; a generic event bus is not a default requirement. They do not import another module's private persistence implementation. Billing consumes eligible internal TimeEntry data and never Google payloads.
 
-Time Tracking owns calendar/work interval duration and local-day splitting. Billing owns additional splitting required specifically by pricing/rate changes and reuses Time Tracking duration calculations. Do not implement duplicate duration calculations. Raw TimeEntry elapsed duration is the current MVP billable duration. Billing timezone and automatic rate-boundary segmentation remain subject to the decisions in `billing-rules.md`.
+Time Tracking owns calendar/work interval duration and local-day splitting. Billing owns additional splitting required specifically by pricing/rate changes and reuses Time Tracking duration calculations. Do not implement duplicate duration calculations. Raw TimeEntry elapsed duration is the current MVP billable duration. The workspace IANA billing timezone and explicit UTC-to-local-date conversion are confirmed; automatically applying them to pricing segmentation remains subject to the decisions in `billing-rules.md`.
 
 ## Processing flow
 
@@ -99,10 +99,17 @@ source of historical invoice truth.
 
 Workspace invoice settings are a separate, mutable, one-per-workspace Billing
 configuration. They describe the current France-first VAT regime and structured payment
-defaults used by a future issuance operation. VAT identity in a billing profile does not
+defaults plus an optional IANA billing timezone used by a future issuance operation. A
+missing timezone is preserved without fallback and blocks invoice-date derivation. VAT identity in a billing profile does not
 select the VAT regime. Issuance must derive and snapshot the exact applicable tax,
 payment, statutory wording, operation-category, and VAT-on-debits facts; historical
 documents must never read those facts back from the live settings row.
+
+Invoice-date policy is pure domain code. A caller supplies an aware UTC issuance instant;
+Billing converts it through the configured IANA zone to a local issue date and derives the due
+date with calendar-date arithmetic from the selected structured payment term. It never reads the
+host timezone or clock. Future issuance must snapshot the instant, zone identifier, issue date,
+payment rule, and due date; changing mutable settings cannot reinterpret historical invoices.
 
 The pure VAT engine consumes an immutable InvoiceDraft and workspace-matching fiscal settings.
 It does not change line rounding: rounded invoice-line HT amounts form rate-group bases, and exact

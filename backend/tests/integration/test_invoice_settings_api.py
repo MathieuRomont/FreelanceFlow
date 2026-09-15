@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,6 +19,9 @@ from freelanceflow.modules.billing.adapters.invoice_settings_transactions import
 from freelanceflow.modules.billing.application.invoice_settings import (
     InvoiceSettingsService,
 )
+from freelanceflow.modules.billing.domain.invoice_settings import BillingTimezone
+
+from .conftest import disposable_database, migrate
 
 
 def _franchise_payload(**changes: object) -> dict[str, object]:
@@ -166,16 +169,22 @@ def test_settings_api_create_read_update_isolation_and_invoice_independence(
         assert body["late_payment_penalty_annual_rate_percent"] == "12.5000"
         assert body["recovery_indemnity_currency"] == "EUR"
         assert body["recovery_indemnity_minor_units"] == 4_000
+        assert body["billing_timezone"] is None
         assert http.get(path).json() == body
 
         invoice_id, invoice_before = _create_invoice_snapshot(http, workspace_id)
-        updated = http.put(path, json=_taxable_payload())
+        updated = http.put(
+            path,
+            json=_taxable_payload(billing_timezone="Europe/Paris"),
+        )
         assert updated.status_code == 200
         updated_body = updated.json()
         assert updated_body["fiscal"]["default_vat_rate_percent"] == "20.000100"
         assert updated_body["fiscal"]["vat_on_debits"] is True
         assert updated_body["fiscal"]["franchise_invoice_mention"] is None
         assert updated_body["early_payment_discount"]["rate_percent"] == "2.5000"
+        assert updated_body["billing_timezone"] == "Europe/Paris"
+        assert http.get(path).json() == updated_body
         assert (
             http.get(f"/workspaces/{workspace_id}/invoice-drafts/{invoice_id}").json()
             == invoice_before
@@ -268,6 +277,8 @@ def test_vat_identity_does_not_imply_vat_regime(database: Engine) -> None:
             }
         ),
         _franchise_payload(late_payment_penalty_annual_rate_percent="0"),
+        _franchise_payload(billing_timezone="Europe/Not_A_Zone"),
+        _franchise_payload(billing_timezone="+02:00"),
     ],
 )
 def test_settings_api_rejects_invalid_and_nonexact_input(
@@ -300,6 +311,7 @@ def test_settings_repository_roundtrip_constraints_and_rollback(
                     late_payment_penalty_annual_rate_percent=(
                         original.late_payment_penalty_annual_rate_percent + 1
                     ),
+                    billing_timezone=BillingTimezone("Europe/London"),
                 )
             )
             raise RuntimeError("rollback")
@@ -319,3 +331,61 @@ def test_settings_repository_roundtrip_constraints_and_rollback(
                 ),
                 {"workspace_id": workspace_id},
             )
+    with pytest.raises(IntegrityError, match="nonblank_billing_timezone"):
+        with Session(database) as session, session.begin():
+            session.execute(
+                text(
+                    "UPDATE workspace_invoice_settings "
+                    "SET billing_timezone = ' ' "
+                    "WHERE workspace_id = :workspace_id"
+                ),
+                {"workspace_id": workspace_id},
+            )
+
+
+def test_timezone_migration_preserves_existing_settings_as_unconfigured() -> None:
+    workspace_id = uuid4()
+    with disposable_database() as engine:
+        migrate(engine, "upgrade", "0011")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO workspace_invoice_settings (
+                        workspace_id, vat_regime, franchise_legal_basis,
+                        default_vat_rate_percent, vat_on_debits,
+                        payment_due_rule, payment_net_days,
+                        early_discount_kind, early_discount_rate_percent,
+                        early_discount_days_after_issue,
+                        late_payment_penalty_annual_rate_percent,
+                        recovery_indemnity_policy, operation_category
+                    ) VALUES (
+                        :workspace_id, 'franchise_en_base', 'cgi_293_b',
+                        NULL, FALSE, 'due_on_issue', NULL,
+                        'none', NULL, NULL, 12,
+                        'french_b2b_40_eur', 'services'
+                    )
+                    """
+                ),
+                {"workspace_id": workspace_id},
+            )
+
+        migrate(engine, "upgrade")
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT billing_timezone FROM workspace_invoice_settings "
+                        "WHERE workspace_id = :workspace_id"
+                    ),
+                    {"workspace_id": workspace_id},
+                )
+                is None
+            )
+
+        migrate(engine, "downgrade", "0011")
+        assert "billing_timezone" not in {
+            column["name"] for column in inspect(engine).get_columns("workspace_invoice_settings")
+        }
+        migrate(engine, "upgrade")
+        migrate(engine, "check")

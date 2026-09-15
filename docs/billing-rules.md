@@ -76,6 +76,15 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - The late-payment penalty is an exact, finite, positive Decimal annual percentage. FreelanceFlow validates this representation but does not assert that a configured rate satisfies the legally changing minimum on a future issue date; issuance must validate and snapshot the applicable facts.
 - The current France-first B2B recovery policy is explicit and fixed at EUR 40.00 (`4000` minor units). It is not caller-supplied money and does not calculate or assess a recovery fee in this slice.
 
+### Billing timezone and invoice dates (issue #42)
+
+- `WorkspaceInvoiceSettings` may contain one validated IANA `billing_timezone` identifier. It is mutable configuration, is never inferred from an address, and is not represented by a fixed UTC offset. Existing settings may retain an explicit missing value for migration compatibility; any operation requiring an invoice business date must fail rather than choose a fallback.
+- An invoice issue date is derived only from a caller-supplied timezone-aware UTC instant and the configured billing timezone. The conversion uses the IANA timezone rules before taking the local calendar date. Domain date calculation never reads the host timezone or obtains the current time itself.
+- Payment due dates use date-only calendar arithmetic from the explicit issue date. `due_on_issue` returns the issue date. `net_days_after_issue` adds the configured 1 to 60 calendar days. `invoice_month_end_plus_45_days` adds 45 calendar days to the last day of the issue month. `end_of_month_after_45_days` returns the last day of the month reached after adding 45 calendar days to the issue date.
+- The two 45-days-end-of-month rules are separate because both computation methods are recognized and can produce different dates. No business-day, weekend, holiday, or timestamp-duration adjustment is applied.
+- Future invoice issuance must snapshot its supplied UTC issuance instant, configured IANA timezone identifier, derived local issue date, selected payment terms, and derived due date. Later settings or timezone-database changes must not alter issued-invoice history.
+- The configured timezone is not automatically applied to existing pricing in this slice. `PreparedBillingSegment.business_date` remains caller-supplied, and automatic local-day or rate-boundary segmentation remains unresolved.
+
 ### Deterministic VAT calculation (issue #40)
 
 - VAT calculation is a pure Billing-domain operation over one immutable `InvoiceDraft` revision and workspace-matching fiscal settings. It does not persist an issued invoice and never infers the VAT regime from a VAT identification number.
@@ -126,7 +135,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 - Time Tracking owns calendar/work interval duration and local-day splitting.
 - Billing owns splitting required specifically by pricing/rate-boundary changes and reuses Time Tracking duration calculations; do not duplicate duration calculations.
-- Ownership is confirmed; billing timezone conversion and splitting work across rate boundaries remain unresolved below.
+- Ownership is confirmed; automatically applying the billing timezone to split work across local-day or rate boundaries remains unresolved below.
 
 ## PROPOSED rules requiring confirmation
 
@@ -157,10 +166,9 @@ replacement, and any actor identity remain undefined and must not be inferred.
 
 | Decision | Questions to settle before implementation |
 | --- | --- |
-| Billing timezone | Is it fixed per workspace? How are timezone changes handled historically? Are rate dates interpreted in the same timezone? |
 | Future duration adjustments | Raw TimeEntry elapsed duration is the confirmed MVP billable duration. Any future break, pause, or manual adjustment behavior requires a new confirmed rule. |
 | Tax and later monetary rounding | Invoice lines and rate-group VAT use the confirmed EUR precision and explicit `ROUND_HALF_UP` policies above. Other currencies require an explicitly confirmed supported precision before use. Negative invoices and credit notes remain unresolved. |
-| Rate boundaries | Automatic pricing-boundary segmentation is blocked by the unresolved billing-timezone/business-date policy. Date-range inclusivity and open-ended agreements are confirmed above; callers may provide already-prepared segments with an explicit business date. |
+| Rate boundaries | The workspace billing timezone and UTC-to-local-date primitive are confirmed, but automatic pricing-boundary segmentation and the operation that assigns business dates to work are not. Date-range inclusivity and open-ended agreements are confirmed above; callers continue to provide already-prepared segments with an explicit business date. |
 | Rate edits and validation | Resolution rejects conflicts only at the highest applicable precedence level. Whether overlapping agreements should be rejected globally at creation/edit time remains UNRESOLVED. How do backdated changes affect existing drafts and approvals? Are zero/negative rates allowed? |
 | Time review and eligibility | What optional TimeEntry review workflow is needed? Which edits affect eligibility? When do ambiguous, unclassified, or unbillable entries block generation versus get explicitly excluded, and how is exclusion shown? Individual entry approval is not required to generate a draft. |
 | Overlap and all-day events | How are overlapping work intervals resolved? Are all-day events excluded or manually converted? |
@@ -169,7 +177,7 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | Allocations | Do drafts reserve time? When is a reservation released? Is partial billing supported, and how are overlaps prevented transactionally? |
 | Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
 | Tax and legal scope | France-first current party profiles, VAT settings, franchise treatment, and deterministic ordinary taxable VAT calculation are confirmed above. Exemptions other than franchise en base; reverse charge; intra-EU/export rules; goods and mixed operation categories; goods-delivery addresses; sector/activity registrations or insurance; exact issuance-time statutory validation; and retention rules remain unresolved. Settings and pure calculations are never issued-invoice history. |
-| Numbering and dates | When is an invoice number assigned? How are numbering scope, issue dates, due dates, and voided numbers handled? |
+| Numbering and issuance | When is an invoice number assigned? How are numbering scope and voided numbers handled? Issue-date and due-date derivation are confirmed above, but the future issuance operation must still supply its authoritative UTC issuance instant and snapshot all results. |
 | Delivery request details | The sender, recipient, subject, body, and attachment filename supplied to the worker are frozen before the first provider call and cannot change across retries. How are those values selected, when may a user replace an unsent delivery with a new logical delivery, and how is scheduling represented? Immutable invoice revision/artifact content cannot be edited in place. |
 | Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which Resend polling/reconciliation operation or additional verified correlation key is authoritative when an uncertain attempt never persisted a provider message ID, or after the provider's idempotency-retention window expires? The stable delivery key and webhook history are confirmed, but exactly-once delivery is not claimed. |
 | Downstream delivery status | Local `sent` means Resend accepted the request, while verified downstream facts remain separate and append-only. What, if any, derived current view should reconcile out-of-order delivered, delayed, bounced, failed, or complained events? How are cancellation and deliberate resend represented? No precedence policy is inferred. |

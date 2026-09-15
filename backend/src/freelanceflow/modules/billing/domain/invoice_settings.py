@@ -1,13 +1,37 @@
-"""Mutable France-first fiscal and payment defaults for future invoice issuance."""
+"""Mutable billing-timezone, fiscal, and payment defaults for future issuance."""
 
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from enum import StrEnum
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 class InvalidInvoiceSettings(ValueError):
     """Invoice defaults are incomplete, inconsistent, or locally invalid."""
+
+
+@dataclass(frozen=True)
+class BillingTimezone:
+    """A validated IANA timezone used for mutable workspace billing policy."""
+
+    name: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise InvalidInvoiceSettings("Billing timezone must be a nonblank IANA identifier")
+        try:
+            zone = ZoneInfo(self.name)
+        except (ValueError, ZoneInfoNotFoundError) as error:
+            raise InvalidInvoiceSettings(
+                f"Billing timezone {self.name!r} is not a valid IANA identifier"
+            ) from error
+        if zone.key != self.name:
+            raise InvalidInvoiceSettings("Billing timezone must preserve its exact IANA identifier")
+
+    def to_zoneinfo(self) -> ZoneInfo:
+        """Return standard-library timezone rules for deterministic conversion."""
+        return ZoneInfo(self.name)
 
 
 class VatRegime(StrEnum):
@@ -189,6 +213,7 @@ class WorkspaceInvoiceSettings:
     late_payment_penalty_annual_rate_percent: Decimal
     recovery_indemnity_policy: RecoveryIndemnityPolicy
     operation_category: InvoiceOperationCategory
+    billing_timezone: BillingTimezone | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.workspace_id, UUID):
@@ -210,6 +235,10 @@ class WorkspaceInvoiceSettings:
             raise InvalidInvoiceSettings("Recovery indemnity policy is invalid")
         if self.operation_category is not InvoiceOperationCategory.SERVICES:
             raise InvalidInvoiceSettings("Only service invoice operations are supported")
+        if self.billing_timezone is not None and not isinstance(
+            self.billing_timezone, BillingTimezone
+        ):
+            raise InvalidInvoiceSettings("Billing timezone is invalid")
 
     @property
     def recovery_indemnity_currency(self) -> str:
