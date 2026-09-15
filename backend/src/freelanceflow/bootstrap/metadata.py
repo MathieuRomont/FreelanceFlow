@@ -1,5 +1,9 @@
 """Complete migration metadata; importing this module performs no database I/O."""
 
+from freelanceflow.modules.billing.adapters.billing_profile_models import (
+    ClientBillingProfileRow,
+    WorkspaceBillingProfileRow,
+)
 from freelanceflow.modules.billing.adapters.models import (
     InvoiceAllocationRow,
     InvoiceApprovalRow,
@@ -25,6 +29,8 @@ __all__ = [
     "ProjectRow",
     "TaskRow",
     "RateAgreementRow",
+    "WorkspaceBillingProfileRow",
+    "ClientBillingProfileRow",
     "InvoiceDraftRow",
     "InvoiceDraftHeadRow",
     "InvoiceDeliveryRow",
