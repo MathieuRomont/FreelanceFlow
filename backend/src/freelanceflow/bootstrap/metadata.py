@@ -7,6 +7,15 @@ from freelanceflow.modules.billing.adapters.billing_profile_models import (
 from freelanceflow.modules.billing.adapters.invoice_settings_models import (
     WorkspaceInvoiceSettingsRow,
 )
+from freelanceflow.modules.billing.adapters.issued_invoice_models import (
+    InvoiceNumberCounterRow,
+    IssuedInvoiceAllocationRow,
+    IssuedInvoiceClientRow,
+    IssuedInvoiceLineRow,
+    IssuedInvoiceRow,
+    IssuedInvoiceSellerRow,
+    IssuedInvoiceVatBreakdownRow,
+)
 from freelanceflow.modules.billing.adapters.models import (
     InvoiceAllocationRow,
     InvoiceApprovalRow,
@@ -45,5 +54,12 @@ __all__ = [
     "InvoiceAllocationRow",
     "InvoiceApprovalRow",
     "InvoiceArtifactRow",
+    "InvoiceNumberCounterRow",
+    "IssuedInvoiceRow",
+    "IssuedInvoiceSellerRow",
+    "IssuedInvoiceClientRow",
+    "IssuedInvoiceVatBreakdownRow",
+    "IssuedInvoiceLineRow",
+    "IssuedInvoiceAllocationRow",
     "TimeEntryRow",
 ]

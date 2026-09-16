@@ -1,8 +1,9 @@
 """Compose HTTP and persistence without connecting during module import."""
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI
 from sqlalchemy.engine import Engine
@@ -21,6 +22,9 @@ from freelanceflow.modules.billing.adapters.invoice_draft_transactions import (
 )
 from freelanceflow.modules.billing.adapters.invoice_settings_transactions import (
     SqlAlchemyInvoiceSettingsTransaction,
+)
+from freelanceflow.modules.billing.adapters.issued_invoice_transactions import (
+    SqlAlchemyInvoiceIssuanceTransaction,
 )
 from freelanceflow.modules.billing.adapters.transactions import (
     SqlAlchemyRateAgreementTransaction,
@@ -41,6 +45,10 @@ from freelanceflow.modules.billing.api.invoice_drafts import get_invoice_draft_s
 from freelanceflow.modules.billing.api.invoice_drafts import router as invoice_draft_router
 from freelanceflow.modules.billing.api.invoice_settings import get_invoice_settings_service
 from freelanceflow.modules.billing.api.invoice_settings import router as invoice_settings_router
+from freelanceflow.modules.billing.api.issued_invoices import (
+    get_invoice_issuance_service,
+)
+from freelanceflow.modules.billing.api.issued_invoices import router as issued_invoice_router
 from freelanceflow.modules.billing.api.rate_agreements import get_rate_agreement_service
 from freelanceflow.modules.billing.api.rate_agreements import router as rate_agreement_router
 from freelanceflow.modules.billing.application.billing_profiles import BillingProfileService
@@ -52,6 +60,7 @@ from freelanceflow.modules.billing.application.invoice_artifacts import (
 )
 from freelanceflow.modules.billing.application.invoice_drafts import InvoiceDraftService
 from freelanceflow.modules.billing.application.invoice_settings import InvoiceSettingsService
+from freelanceflow.modules.billing.application.issued_invoices import InvoiceIssuanceService
 from freelanceflow.modules.billing.application.rate_agreements import RateAgreementService
 from freelanceflow.modules.clients.adapters.repository import ClientRepository
 from freelanceflow.modules.clients.adapters.transactions import SqlAlchemyClientTransaction
@@ -99,7 +108,15 @@ from freelanceflow.modules.time_tracking.application.time_entries import TimeEnt
 from freelanceflow.shared.persistence import build_engine
 
 
-def create_app(engine: Engine | None = None) -> FastAPI:
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def create_app(
+    engine: Engine | None = None,
+    *,
+    invoice_clock: Callable[[], datetime] = _utc_now,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         owned_engine = None
@@ -127,6 +144,12 @@ def create_app(engine: Engine | None = None) -> FastAPI:
                 SqlAlchemyInvoiceDraftTransaction(
                     configured_engine, ClientRepository, TimeEntryRepository
                 )
+            )
+            invoice_issuance_service = InvoiceIssuanceService(
+                SqlAlchemyInvoiceIssuanceTransaction(
+                    configured_engine, ClientRepository, TimeEntryRepository
+                ),
+                clock=invoice_clock,
             )
             invoice_artifact_service = InvoiceArtifactService(
                 SqlAlchemyInvoiceArtifactTransaction(configured_engine)
@@ -163,6 +186,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides[get_invoice_draft_service] = (
                 lambda: invoice_draft_service
             )
+            application.dependency_overrides[get_invoice_issuance_service] = (
+                lambda: invoice_issuance_service
+            )
             application.dependency_overrides[get_invoice_artifact_service] = (
                 lambda: invoice_artifact_service
             )
@@ -192,6 +218,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             application.dependency_overrides.pop(get_invoice_settings_service, None)
             application.dependency_overrides.pop(get_time_entry_service, None)
             application.dependency_overrides.pop(get_invoice_draft_service, None)
+            application.dependency_overrides.pop(get_invoice_issuance_service, None)
             application.dependency_overrides.pop(get_invoice_artifact_service, None)
             application.dependency_overrides.pop(get_invoice_approval_service, None)
             application.dependency_overrides.pop(get_invoice_delivery_service, None)
@@ -212,6 +239,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     application.include_router(invoice_settings_router)
     application.include_router(time_entry_router)
     application.include_router(invoice_draft_router)
+    application.include_router(issued_invoice_router)
     application.include_router(invoice_artifact_router)
     application.include_router(invoice_approval_router)
     application.include_router(invoice_delivery_router)

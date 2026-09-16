@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, field_validator
 
 from freelanceflow.modules.billing.application.invoice_drafts import (
     InvoiceAllocationInput,
+    InvoiceDraftAlreadyIssuedError,
     InvoiceDraftIdentityChangeError,
     InvoiceDraftResourceNotFound,
     InvoiceDraftService,
@@ -237,12 +238,14 @@ def create_invoice_draft_revision(
     except InvoiceDraftResourceNotFound as error:
         raise _not_found() from error
     except (
+        InvoiceDraftAlreadyIssuedError,
         InvoiceDraftIdentityChangeError,
         InvoiceDraftError,
         BillingCalculationError,
         RateError,
     ) as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+        status_code = 409 if isinstance(error, InvoiceDraftAlreadyIssuedError) else 422
+        raise HTTPException(status_code=status_code, detail=str(error)) from error
     return InvoiceDraftResponse.from_draft(draft)
 
 

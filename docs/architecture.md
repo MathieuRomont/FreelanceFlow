@@ -53,7 +53,7 @@ Each backend module separates `domain/`, `application/`, `adapters/`, and `api/`
 | Clients | Clients, projects, tasks, and their relationships |
 | Calendar | Connections, internal source-event records, synchronization, classification rules and suggestions |
 | Time tracking | Editable/classifiable time entries, source reconciliation, calendar/work interval duration, local-day splitting; detailed review workflow unresolved |
-| Billing | Current legal billing profiles and invoice fiscal/payment defaults, effective-dated rates, pricing/rate-boundary splitting, exact pricing and VAT calculations, allocations, invoice versions, lines, approvals, frozen artifacts |
+| Billing | Current legal billing profiles and invoice fiscal/payment defaults, effective-dated rates, pricing/rate-boundary splitting, exact pricing and VAT calculations, allocations, invoice versions, immutable legal issuance and numbering, approvals, frozen artifacts |
 | Delivery | Scheduling, provider interaction, delivery attempts and outcomes |
 | Audit | Append-only records of important state changes |
 
@@ -80,8 +80,9 @@ Google Calendar adapter
   → Billing calculation
   → Invoice draft
   → Deterministic VAT calculation
-  → Freelancer review and approval of exact revision and frozen artifact
-  → Delivery of frozen approved artifact
+  → Freelancer review
+  → Atomic immutable legal issuance and numbering
+  → Future final issued artifact / approval integration
 ```
 
 Calendar import and classification produce internal data and suggestions. The freelancer can correct assignments and time. Source updates flag reviewed entries for reconciliation instead of silently replacing edits.
@@ -99,7 +100,7 @@ source of historical invoice truth.
 
 Workspace invoice settings are a separate, mutable, one-per-workspace Billing
 configuration. They describe the current France-first VAT regime and structured payment
-defaults plus an optional IANA billing timezone used by a future issuance operation. A
+defaults plus an optional IANA billing timezone used by issuance. A
 missing timezone is preserved without fallback and blocks invoice-date derivation. VAT identity in a billing profile does not
 select the VAT regime. Issuance must derive and snapshot the exact applicable tax,
 payment, statutory wording, operation-category, and VAT-on-debits facts; historical
@@ -108,15 +109,24 @@ documents must never read those facts back from the live settings row.
 Invoice-date policy is pure domain code. A caller supplies an aware UTC issuance instant;
 Billing converts it through the configured IANA zone to a local issue date and derives the due
 date with calendar-date arithmetic from the selected structured payment term. It never reads the
-host timezone or clock. Future issuance must snapshot the instant, zone identifier, issue date,
+host timezone or clock. Issuance snapshots the instant, zone identifier, issue date,
 payment rule, and due date; changing mutable settings cannot reinterpret historical invoices.
 
 The pure VAT engine consumes an immutable InvoiceDraft and workspace-matching fiscal settings.
 It does not change line rounding: rounded invoice-line HT amounts form rate-group bases, and exact
 rational VAT is rounded once per distinct rate subtotal with the explicit HALF_UP invoice policy.
 It returns reconciled HT, VAT, and TTC totals plus exact source amounts, group rates, line identity,
-and franchise treatment for audit. The engine is independent from persistence and issuance; a
-future issued invoice must snapshot the exact calculation and settings it used.
+and franchise treatment for audit. The engine is independent from persistence and issuance;
+`IssuedInvoice` snapshots the exact calculation and settings it used.
+
+Legal issuance is one application-owned PostgreSQL transaction. It locks the logical draft head,
+rejects stale revisions, locks the mutable seller/client/settings rows for a consistent snapshot,
+then locks and increments the workspace's transactional `main` number counter. It persists normalized
+party, fiscal/payment, line, allocation, VAT, exact-rational, and integer-minor-unit snapshots before
+binding the head to that issuance. A rollback restores both snapshot writes and the counter value.
+The counter is not a PostgreSQL sequence, so a failed transaction does not create a legal-number gap.
+Revision creation locks the same head and fails once it is issued. Retrieval never consults mutable
+configuration or source work/rate rows.
 
 InvoiceDraft modifications insert complete immutable revisions. A logical invoice head is
 locked transactionally when allocating its next monotonically increasing revision number;
@@ -128,6 +138,10 @@ to one exact `(invoice ID, revision, workspace)` snapshot. The application gener
 artifact UUID and creation time and derives a lowercase hexadecimal SHA-256 digest and
 exact byte size from the payload. Metadata retrieval is separate from binary retrieval;
 there is no mutable current-artifact pointer.
+
+The existing artifact/approval/delivery chain remains draft-revision-bound. It is not a final legal
+artifact for `IssuedInvoice`, does not authorize issuance, and is not inherited by issuance. A later
+slice must generate and bind the final issued artifact before issued-invoice approval/delivery.
 
 Approval is an immutable record bound to one exact invoice revision, artifact UUID, and
 artifact SHA-256 snapshot. PostgreSQL serializes approval attempts on the revision and

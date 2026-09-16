@@ -56,7 +56,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 ### Legal billing profiles (issue #36)
 
-- Legal billing profiles are mutable current configuration, not invoice history. There is at most one current seller profile per workspace and one current buyer profile per Client. A future issued invoice must snapshot every legal value it uses and must not reconstruct history from a live profile row.
+- Legal billing profiles are mutable current configuration, not invoice history. There is at most one current seller profile per workspace and one current buyer profile per Client. Issuance snapshots every legal value it uses and does not reconstruct history from a live profile row.
 - `Client.name` remains a display name. The buyer's legal name is explicit and independently mutable in `ClientBillingProfile`.
 - The France-first workspace seller profile records legal entity kind (`individual` or `company`), legal name, optional trading name, SIREN, establishment SIRET, optional French VAT number, a structured French legal address, and an optional distinct billing address. A company also requires its legal form and exact Decimal share capital with an explicit currency code; an individual does not carry company form/capital fields.
 - A client profile records legal name, optional trading name, structured legal and optional distinct billing addresses, optional SIREN outside France, and optional French VAT number. A buyer with a French legal address requires SIREN for the France-first electronic-invoice data set.
@@ -66,13 +66,13 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 ### Invoice fiscal and payment settings (issue #38)
 
-- There is at most one mutable current `WorkspaceInvoiceSettings` configuration per workspace. It is an issuance default, not historical invoice truth. Creation, retrieval, and full replacement are explicit workspace-scoped operations. A future issuance operation must snapshot every setting and derived invoice fact it uses; changing current settings never rewrites an InvoiceDraft revision or other invoice history.
+- There is at most one mutable current `WorkspaceInvoiceSettings` configuration per workspace. It is an issuance default, not historical invoice truth. Creation, retrieval, and full replacement are explicit workspace-scoped operations. Issuance snapshots every setting and derived invoice fact it uses; changing current settings never rewrites an InvoiceDraft revision or other invoice history.
 - VAT identification and VAT charging regime are independent. A workspace VAT number being present or absent does not select a regime. The current France-first regimes are `franchise_en_base` and `taxable`.
-- Franchise en base requires one structured legal basis: CGI article 293 B, CGI article 293 B bis, or article 284 of Directive 2006/112/EC. It carries no default VAT rate and cannot select VAT on debits. The canonical invoice mention is derived from that semantic basis and must be copied as exact text into the future issuance snapshot. Under the current BOFiP rule, a franchise invoice must not show VAT.
+- Franchise en base requires one structured legal basis: CGI article 293 B, CGI article 293 B bis, or article 284 of Directive 2006/112/EC. It carries no default VAT rate and cannot select VAT on debits. The canonical invoice mention is derived from that semantic basis and copied as exact text into the issuance snapshot. Under the current BOFiP rule, a franchise invoice must not show VAT.
 - Taxable configuration requires an exact, finite, nonnegative Decimal default VAT percentage no greater than 100 and no franchise basis. The rate is a mutable default only; the rate and tax treatment actually applied to each future invoice must be explicit and snapshotted.
 - VAT-on-debits is an explicit boolean fiscal choice for a taxable workspace. The current hourly-billing operation category is explicitly `services`; goods and mixed operations are not silently inferred or accepted.
 - Payment due terms are structured as due on issue, 1 to 60 calendar days after issue, invoice-month-end plus 45 days, or end-of-month after 45 days. The two legally recognized 45-days-end-of-month calculations remain distinct. Settings do not calculate or store an actual due date because no invoice issue date exists yet.
-- Early-payment discount terms are either explicitly absent or an exact, positive Decimal percentage payable within a positive number of calendar days after issue. Future issuance must snapshot the exact wording used, including the required statement when no discount applies; arbitrary wording is not the semantic source of truth.
+- Early-payment discount terms are either explicitly absent or an exact, positive Decimal percentage payable within a positive number of calendar days after issue. Issuance snapshots deterministic wording, including the required statement when no discount applies; arbitrary wording is not the semantic source of truth.
 - The late-payment penalty is an exact, finite, positive Decimal annual percentage. FreelanceFlow validates this representation but does not assert that a configured rate satisfies the legally changing minimum on a future issue date; issuance must validate and snapshot the applicable facts.
 - The current France-first B2B recovery policy is explicit and fixed at EUR 40.00 (`4000` minor units). It is not caller-supplied money and does not calculate or assess a recovery fee in this slice.
 
@@ -123,6 +123,16 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - Sent invoice content and its delivered artifact remain immutable. Later changes to clients, rates, or source time must not rewrite them.
 - Corrections to sent invoices must use separate linked records; the legal document/process is unresolved.
 
+### Immutable invoice issuance and legal numbering (issue #44)
+
+- Issuance transforms only the current `InvoiceDraft` revision into one complete immutable `IssuedInvoice`. It snapshots the source revision and allocations, exact and rounded line amounts, VAT breakdown and totals, rounding policies, seller and buyer legal identities and addresses, fiscal and payment semantics and wording, issue/service/due dates, optional purchase-order number, currency, and precision. Retrieval uses only these snapshots, never mutable profiles, settings, Client display names, TimeEntries, RateAgreements, or recalculation under later code.
+- The scoped MVP issues only completed domestic French B2B service invoices in EUR. It requires complete France-first seller identity, a French buyer legal address and SIREN, a configured billing timezone, explicit service-completion date not after the local issue date, one precise description per draft line, and a taxable seller VAT identity when the configured regime is taxable. Deposits, credit notes, reverse charge, exports, intra-EU special treatment, goods, mixed operations, and negative invoice semantics remain unsupported.
+- The application supplies an aware UTC issuance instant. The configured IANA billing timezone derives and is snapshotted with the local issue date; the existing deterministic payment rule derives and snapshots the due date. Domain code never reads a clock or host timezone.
+- The configured late-payment rate is checked at issuance against explicitly versioned effective French policy data and both the configured rate and applicable minimum/policy identity are snapshotted. The implementation contains the confirmed 2026 half-year values only and fails explicitly outside those effective periods instead of guessing future law.
+- One continuous `main` legal-number series exists per workspace. The rendered number is the canonical positive decimal sequence without an annual reset. A PostgreSQL counter row is locked and incremented in the same transaction that persists the full issued snapshot and freezes the draft head. Rollback restores the counter, so failed issuance does not consume a number. Database uniqueness enforces one issuance per logical invoice and unique workspace number/sequence.
+- The lock order is the source draft head, current seller profile, current client profile, current invoice settings, then the workspace number counter. Revision creation and issuance serialize on the same head row. After issuance, no later draft revision may be created. Concurrent duplicate issuance of the same exact request returns the existing snapshot; different immutable request facts conflict and cannot allocate another number.
+- Existing `InvoiceArtifact`, `InvoiceApproval`, and `InvoiceDelivery` records remain explicitly bound to draft revisions. They are not reinterpreted as issued-invoice artifacts or legal authorization, and issuance inherits no approval. Final artifact generation and approval/delivery bound to `IssuedInvoice` require a later model.
+
 ### Reliability and audit
 
 - External operations must be idempotent, including repeat imports and delivery retries.
@@ -143,10 +153,10 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 Document format and rendering details remain open; approval of an exact revision and frozen artifact is confirmed.
 
-The pure Invoice Draft remains tax-independent; the separate pure VAT calculation does not
-implement issuance, legal invoice numbering, negative-invoice or credit-note semantics, corrections,
-PDF rendering, billing-period membership, or automatic line descriptions.
-Their rules remain unresolved or belong to later explicitly scoped work.
+The pure Invoice Draft remains tax-independent. Issuance consumes that immutable draft plus the
+separate VAT calculation, but negative-invoice or credit-note semantics, corrections, PDF rendering,
+billing-period membership, and automatic line descriptions remain unresolved or belong to later
+explicitly scoped work.
 
 ## UNRESOLVED decisions
 
@@ -177,7 +187,7 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | Allocations | Do drafts reserve time? When is a reservation released? Is partial billing supported, and how are overlaps prevented transactionally? |
 | Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
 | Tax and legal scope | France-first current party profiles, VAT settings, franchise treatment, and deterministic ordinary taxable VAT calculation are confirmed above. Exemptions other than franchise en base; reverse charge; intra-EU/export rules; goods and mixed operation categories; goods-delivery addresses; sector/activity registrations or insurance; exact issuance-time statutory validation; and retention rules remain unresolved. Settings and pure calculations are never issued-invoice history. |
-| Numbering and issuance | When is an invoice number assigned? How are numbering scope and voided numbers handled? Issue-date and due-date derivation are confirmed above, but the future issuance operation must still supply its authoritative UTC issuance instant and snapshot all results. |
+| Numbering extensions and issued artifacts | The continuous per-workspace main sequence and rollback-safe issuance boundary are confirmed above. Annual resets, multiple legal series, deliberate void/cancellation records, final artifact generation from an `IssuedInvoice`, and approval/delivery of that issued artifact remain unresolved. |
 | Delivery request details | The sender, recipient, subject, body, and attachment filename supplied to the worker are frozen before the first provider call and cannot change across retries. How are those values selected, when may a user replace an unsent delivery with a new logical delivery, and how is scheduling represented? Immutable invoice revision/artifact content cannot be edited in place. |
 | Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which Resend polling/reconciliation operation or additional verified correlation key is authoritative when an uncertain attempt never persisted a provider message ID, or after the provider's idempotency-retention window expires? The stable delivery key and webhook history are confirmed, but exactly-once delivery is not claimed. |
 | Downstream delivery status | Local `sent` means Resend accepted the request, while verified downstream facts remain separate and append-only. What, if any, derived current view should reconcile out-of-order delivered, delayed, bounced, failed, or complained events? How are cancellation and deliberate resend represented? No precedence policy is inferred. |

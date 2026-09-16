@@ -72,6 +72,40 @@ def _client_values(value: ClientBillingProfile) -> dict[str, object]:
     }
 
 
+def _workspace_from_row(row: WorkspaceBillingProfileRow) -> WorkspaceBillingProfile:
+    legal_address = _address_from_row(row, "legal")
+    assert legal_address is not None
+    return WorkspaceBillingProfile(
+        workspace_id=row.workspace_id,
+        legal_entity_kind=LegalEntityKind(row.legal_entity_kind),
+        legal_name=row.legal_name,
+        trading_name=row.trading_name,
+        siren=row.siren,
+        siret=row.siret,
+        vat_number=row.vat_number,
+        legal_form=row.legal_form,
+        share_capital=row.share_capital,
+        share_capital_currency=row.share_capital_currency,
+        legal_address=legal_address,
+        billing_address=_address_from_row(row, "billing"),
+    )
+
+
+def _client_from_row(row: ClientBillingProfileRow) -> ClientBillingProfile:
+    legal_address = _address_from_row(row, "legal")
+    assert legal_address is not None
+    return ClientBillingProfile(
+        workspace_id=row.workspace_id,
+        client_id=row.client_id,
+        legal_name=row.legal_name,
+        trading_name=row.trading_name,
+        siren=row.siren,
+        vat_number=row.vat_number,
+        legal_address=legal_address,
+        billing_address=_address_from_row(row, "billing"),
+    )
+
+
 class BillingProfileRepository:
     def __init__(
         self,
@@ -101,24 +135,15 @@ class BillingProfileRepository:
 
     def get_workspace_profile(self) -> WorkspaceBillingProfile | None:
         row = self.session.get(WorkspaceBillingProfileRow, self.workspace_id)
-        if row is None:
-            return None
-        legal_address = _address_from_row(row, "legal")
-        assert legal_address is not None
-        return WorkspaceBillingProfile(
-            workspace_id=row.workspace_id,
-            legal_entity_kind=LegalEntityKind(row.legal_entity_kind),
-            legal_name=row.legal_name,
-            trading_name=row.trading_name,
-            siren=row.siren,
-            siret=row.siret,
-            vat_number=row.vat_number,
-            legal_form=row.legal_form,
-            share_capital=row.share_capital,
-            share_capital_currency=row.share_capital_currency,
-            legal_address=legal_address,
-            billing_address=_address_from_row(row, "billing"),
+        return _workspace_from_row(row) if row is not None else None
+
+    def get_workspace_profile_for_snapshot(self) -> WorkspaceBillingProfile | None:
+        row = self.session.scalar(
+            select(WorkspaceBillingProfileRow)
+            .where(WorkspaceBillingProfileRow.workspace_id == self.workspace_id)
+            .with_for_update(read=True)
         )
+        return _workspace_from_row(row) if row is not None else None
 
     def update_workspace_profile(self, value: WorkspaceBillingProfile) -> bool:
         if value.workspace_id != self.workspace_id:
@@ -150,20 +175,20 @@ class BillingProfileRepository:
                 ClientBillingProfileRow.workspace_id == self.workspace_id,
             )
         )
-        if row is None:
-            return None
-        legal_address = _address_from_row(row, "legal")
-        assert legal_address is not None
-        return ClientBillingProfile(
-            workspace_id=row.workspace_id,
-            client_id=row.client_id,
-            legal_name=row.legal_name,
-            trading_name=row.trading_name,
-            siren=row.siren,
-            vat_number=row.vat_number,
-            legal_address=legal_address,
-            billing_address=_address_from_row(row, "billing"),
+        return _client_from_row(row) if row is not None else None
+
+    def get_client_profile_for_snapshot(
+        self, client_id: UUID
+    ) -> ClientBillingProfile | None:
+        row = self.session.scalar(
+            select(ClientBillingProfileRow)
+            .where(
+                ClientBillingProfileRow.client_id == client_id,
+                ClientBillingProfileRow.workspace_id == self.workspace_id,
+            )
+            .with_for_update(read=True)
         )
+        return _client_from_row(row) if row is not None else None
 
     def update_client_profile(self, value: ClientBillingProfile) -> bool:
         if value.workspace_id != self.workspace_id:

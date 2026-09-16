@@ -128,6 +128,22 @@ class InvoiceDraftHeadRow(Base):
             "currency = 'EUR' AND currency_decimal_places = 2",
             name="supported_currency_precision",
         ),
+        CheckConstraint(
+            "(issued_invoice_id IS NULL AND issued_revision IS NULL) OR "
+            "(issued_invoice_id IS NOT NULL AND issued_revision = current_revision)",
+            name="consistent_issuance_freeze",
+        ),
+        ForeignKeyConstraint(
+            ["issued_invoice_id", "id", "issued_revision", "workspace_id"],
+            [
+                "issued_invoices.id",
+                "issued_invoices.source_invoice_id",
+                "issued_invoices.source_revision",
+                "issued_invoices.workspace_id",
+            ],
+            name="fk_invoice_draft_heads_issued_invoice_id_issued_invoices",
+            use_alter=True,
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -136,6 +152,8 @@ class InvoiceDraftHeadRow(Base):
     currency: Mapped[str]
     currency_decimal_places: Mapped[int] = mapped_column(Integer)
     current_revision: Mapped[int] = mapped_column(Integer)
+    issued_invoice_id: Mapped[UUID | None]
+    issued_revision: Mapped[int | None] = mapped_column(Integer)
 
 
 class InvoiceLineRow(Base):
