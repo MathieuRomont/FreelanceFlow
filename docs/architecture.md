@@ -83,7 +83,8 @@ Google Calendar adapter
   → Freelancer review
   → Atomic immutable legal issuance and numbering
   → Deterministic final issued PDF artifact
-  → Future issued-artifact approval / delivery integration
+  → Immutable final-artifact approval
+  → Future issued-artifact delivery integration
 ```
 
 Calendar import and classification produce internal data and suggestions. The freelancer can correct assignments and time. Source updates flag reviewed entries for reconciliation instead of silently replacing edits.
@@ -141,8 +142,8 @@ exact byte size from the payload. Metadata retrieval is separate from binary ret
 there is no mutable current-artifact pointer.
 
 The existing artifact/approval/delivery chain remains draft-revision-bound. It is not a final legal
-artifact for `IssuedInvoice`, does not authorize issuance, and is not inherited by issuance. A later
-slice must bind the separately generated final issued artifact before issued-invoice approval/delivery.
+artifact for `IssuedInvoice`, does not authorize issuance, and is not inherited by issuance. Final
+issued-artifact approval uses a separate identity and does not retarget that legacy chain.
 
 Issued-invoice PDFs are deterministic representations of the immutable `IssuedInvoice` snapshot.
 The renderer receives that complete aggregate and never reads live profiles, settings, drafts, rates,
@@ -150,6 +151,13 @@ or time entries. Each immutable `IssuedInvoiceArtifact` stores exact `BYTEA` con
 integrity metadata. One canonical artifact exists per issued invoice, representation type, and explicit
 renderer version; later representation types or renderer versions create separate artifacts without
 reinterpreting historical bytes. Draft-bound artifacts remain a distinct domain identity.
+
+`IssuedInvoiceApproval` is a separate immutable final-document approval. PostgreSQL serializes
+attempts by locking the exact issued invoice and permits one approval per issued invoice. The
+approval snapshots and database-binds workspace, issued invoice, artifact UUID, SHA-256,
+representation, and renderer version. Repeating the same exact target returns the original record;
+another artifact conflicts. It has no actor, mutation, replacement, revocation, or delivery semantics
+yet, and the legacy draft approval is never inherited.
 
 Approval is an immutable record bound to one exact invoice revision, artifact UUID, and
 artifact SHA-256 snapshot. PostgreSQL serializes approval attempts on the revision and

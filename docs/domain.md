@@ -30,6 +30,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | InvoiceTaxCalculation | Pure VAT result with exact invoice revision/context, fiscal treatment, exact source HT, rounded HT bases grouped by exact rate, exact and rounded VAT, and reconciled HT/VAT/TTC totals | Every line occurs in exactly one group; VAT is rounded once per rate subtotal with explicit HALF_UP; franchise remains a distinct zero-VAT legal treatment; issuance snapshots the result rather than depending on mutable settings |
 | IssuedInvoice | Immutable legal invoice UUID, source logical invoice/revision, workspace legal number, UTC issuance instant and local dates, party/fiscal/payment snapshots, precise issued lines and allocations, VAT breakdown, exact audit amounts, and rounded HT/VAT/TTC totals | One issuance per logical invoice; current revision only; one continuous rollback-safe number series per workspace; reconstruction never reads mutable configuration or source records |
 | IssuedInvoiceArtifact | Immutable customer-facing representation UUID, workspace and exact IssuedInvoice binding, representation type, renderer version, media type, exact bytes, SHA-256, size, and creation instant | Generated only from the immutable IssuedInvoice snapshot; one canonical artifact per representation/version; separate from draft-bound artifacts and future Factur-X representations |
+| IssuedInvoiceApproval | Application-generated identity, workspace, exact IssuedInvoice and artifact UUID, SHA-256, representation, renderer version, approval timestamp | One immutable final approval per IssuedInvoice; exact-target repeats return the original, another artifact conflicts, and draft approval is never inherited |
 | InvoiceArtifact | Application-generated identity, exact InvoiceDraft revision identity, media type, immutable bytes, exact byte size, lowercase hexadecimal SHA-256 digest, creation instant | Belongs to one workspace and one exact persisted revision; content-derived size and digest are server-authoritative; later revisions never rebind it |
 | InvoiceApproval | Application-generated identity, workspace, exact invoice ID/revision, exact artifact ID/SHA-256 snapshot, approval timestamp | Immutable and unique per invoice revision; no actor is recorded before authentication exists; later revisions do not inherit it and a different artifact cannot replace it |
 | InvoiceDelivery | Application-generated identity, exact immutable approval/revision/artifact/digest snapshot, requested time, provider-neutral message snapshot, state, ordered attempts | One logical delivery per approval; pending claims are atomic; the message and frozen artifact are stable across retries; provider-accepted `sent` and definitive `failed` are terminal; later revisions cannot retarget it |
@@ -57,6 +58,7 @@ Client / Project → RateAgreement
 TimeEntry → InvoiceAllocation → InvoiceLine → Invoice content version
 Invoice content version + WorkspaceInvoiceSettings → InvoiceTaxCalculation
 Current Invoice content version + tax/date/legal configuration → IssuedInvoice
+IssuedInvoice → IssuedInvoiceArtifact → IssuedInvoiceApproval
 Invoice content version → InvoiceApproval → InvoiceDelivery → InvoiceDeliveryAttempt
 Verified provider event → optional InvoiceDeliveryProviderEventMatch → InvoiceDelivery
 Important changes → AuditEvent
@@ -146,7 +148,8 @@ persists everything atomically. Its one-per-workspace `main` counter participate
 transaction, so rollback does not consume the number. Issuance freezes revision creation for that
 logical invoice. Existing draft-bound artifacts and approvals do not authorize issuance and are not
 promoted to legal issued artifacts. Deterministic issued artifacts are separate immutable
-representations; approval and delivery binding for them remains future work.
+representations. Their separate approval binds one exact final artifact and is not inherited from
+draft approval; delivery integration for that final approval remains future work.
 
 Issue #11 confirms that Client requires a nonblank name. Empty and Unicode
 whitespace-only names are rejected; supplied nonblank names are preserved without

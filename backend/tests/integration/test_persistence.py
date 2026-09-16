@@ -321,6 +321,7 @@ def test_migration_cycle() -> None:
             "issued_invoice_allocations",
             "issued_invoice_vat_breakdowns",
             "issued_invoice_artifacts",
+            "issued_invoice_approvals",
             "workspace_billing_profiles",
             "client_billing_profiles",
             "workspace_invoice_settings",
