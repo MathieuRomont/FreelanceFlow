@@ -2,6 +2,7 @@
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -98,6 +99,14 @@ class InvoiceSettingsRepository:
 
     def get(self) -> WorkspaceInvoiceSettings | None:
         row = self.session.get(WorkspaceInvoiceSettingsRow, self.workspace_id)
+        return _to_domain(row) if row else None
+
+    def get_for_snapshot(self) -> WorkspaceInvoiceSettings | None:
+        row = self.session.scalar(
+            select(WorkspaceInvoiceSettingsRow)
+            .where(WorkspaceInvoiceSettingsRow.workspace_id == self.workspace_id)
+            .with_for_update(read=True)
+        )
         return _to_domain(row) if row else None
 
     def update(self, value: WorkspaceInvoiceSettings) -> bool:

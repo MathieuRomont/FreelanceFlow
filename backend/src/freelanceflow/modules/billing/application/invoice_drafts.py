@@ -29,6 +29,10 @@ class InvoiceDraftIdentityChangeError(ValueError):
     """A revision attempted to change its logical invoice identity."""
 
 
+class InvoiceDraftAlreadyIssuedError(ValueError):
+    """An issued logical invoice cannot receive another draft revision."""
+
+
 @dataclass(frozen=True)
 class InvoiceAllocationInput:
     """Caller-prepared interval metadata; source ownership and rates are loaded server-side."""

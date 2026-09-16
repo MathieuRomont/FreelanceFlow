@@ -15,7 +15,10 @@ from freelanceflow.modules.billing.adapters.models import (
     InvoiceLineRow,
 )
 from freelanceflow.modules.billing.adapters.repository import RateAgreementRepository
-from freelanceflow.modules.billing.application.invoice_drafts import TimeEntryCatalog
+from freelanceflow.modules.billing.application.invoice_drafts import (
+    InvoiceDraftAlreadyIssuedError,
+    TimeEntryCatalog,
+)
 from freelanceflow.modules.billing.domain import RateAgreement
 from freelanceflow.modules.billing.domain.invoice_drafts import (
     InvoiceAllocation,
@@ -201,6 +204,10 @@ class InvoiceDraftRepository:
         )
         if head is None:
             return None
+        if head.issued_invoice_id is not None:
+            raise InvoiceDraftAlreadyIssuedError(
+                "Issued InvoiceDraft content cannot receive another revision"
+            )
         return self._get_revision(head.id, head.current_revision)
 
     def add_revision(self, value: InvoiceDraft) -> None:
@@ -214,6 +221,10 @@ class InvoiceDraftRepository:
         )
         if head is None:
             raise ValueError("InvoiceDraft head is unavailable in this workspace")
+        if head.issued_invoice_id is not None:
+            raise InvoiceDraftAlreadyIssuedError(
+                "Issued InvoiceDraft content cannot receive another revision"
+            )
         if (
             value.workspace_id != head.workspace_id
             or value.client_id != head.client_id

@@ -14,7 +14,7 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | --- | --- | --- |
 | Workspace | Freelancer ownership boundary and default currency | One freelancer initially; default currency does not permit mixed currencies within an invoice |
 | WorkspaceBillingProfile | Current seller legal identity, entity kind, SIREN/SIRET, optional French VAT identity, structured legal and optional billing addresses, and company form/capital where applicable | Mutable one-per-workspace configuration; France-first seller address; never historical invoice truth |
-| WorkspaceInvoiceSettings | Current IANA billing timezone, France-first VAT regime, franchise legal basis or default VAT rate, VAT-on-debits choice, structured payment due rule, early-payment discount, late-payment penalty rate, recovery-indemnity policy, and operation category | Mutable one-per-workspace issuance defaults; timezone may be missing only for migration compatibility; every value and derived date used must be snapshotted into future issued-invoice history |
+| WorkspaceInvoiceSettings | Current IANA billing timezone, France-first VAT regime, franchise legal basis or default VAT rate, VAT-on-debits choice, structured payment due rule, early-payment discount, late-payment penalty rate, recovery-indemnity policy, and operation category | Mutable one-per-workspace issuance defaults; timezone may be missing only for migration compatibility; issuance snapshots every value and derived date used |
 | Client | Customer display name and ownership identity | Belongs to a workspace; display name is not legal identity and changes do not rewrite invoice snapshots |
 | ClientBillingProfile | Current buyer legal name distinct from Client display name, optional trading name, structured legal and optional billing addresses, French SIREN where applicable, and optional French VAT identity | Mutable one-per-client configuration; inherits exact client/workspace ownership; never historical invoice truth |
 | Project | Client work grouping, name, active status | Belongs to one client in the same workspace; may have project-specific rates |
@@ -27,7 +27,8 @@ Money uses `Decimal` with an explicit currency. Timestamps representing instants
 | Invoice | Billing period metadata, explicit currency precision snapshot, issuer/client snapshots, content version, exact pre-rounding subtotal, rounded totals, lifecycle information, artifact reference | One currency; tax-free MVP total is the sum of rounded lines; modifications create complete immutable revisions under one logical identity |
 | InvoiceLine | Exact duration, applied hourly rate and RateAgreement identity, exact rational amount, rounded integer minor-unit amount, and source allocations | Caller-grouped compatible segments are summed exactly and rounded once using the confirmed policy; snapshots calculations rather than reading mutable current rates |
 | InvoiceAllocation | Association between a billed TimeEntry segment and an invoice line, including allocated interval/quantity and provenance | Prevents duplicate billing of the same time; traces a line back to allocated work in the invoice workspace and client, with compatible project/task relationships and invoice currency/rate context; reservation/release policy remains unresolved |
-| InvoiceTaxCalculation | Pure VAT result with exact invoice revision/context, fiscal treatment, exact source HT, rounded HT bases grouped by exact rate, exact and rounded VAT, and reconciled HT/VAT/TTC totals | Every line occurs in exactly one group; VAT is rounded once per rate subtotal with explicit HALF_UP; franchise remains a distinct zero-VAT legal treatment; future issuance must snapshot the result rather than depend on mutable settings |
+| InvoiceTaxCalculation | Pure VAT result with exact invoice revision/context, fiscal treatment, exact source HT, rounded HT bases grouped by exact rate, exact and rounded VAT, and reconciled HT/VAT/TTC totals | Every line occurs in exactly one group; VAT is rounded once per rate subtotal with explicit HALF_UP; franchise remains a distinct zero-VAT legal treatment; issuance snapshots the result rather than depending on mutable settings |
+| IssuedInvoice | Immutable legal invoice UUID, source logical invoice/revision, workspace legal number, UTC issuance instant and local dates, party/fiscal/payment snapshots, precise issued lines and allocations, VAT breakdown, exact audit amounts, and rounded HT/VAT/TTC totals | One issuance per logical invoice; current revision only; one continuous rollback-safe number series per workspace; reconstruction never reads mutable configuration or source records |
 | InvoiceArtifact | Application-generated identity, exact InvoiceDraft revision identity, media type, immutable bytes, exact byte size, lowercase hexadecimal SHA-256 digest, creation instant | Belongs to one workspace and one exact persisted revision; content-derived size and digest are server-authoritative; later revisions never rebind it |
 | InvoiceApproval | Application-generated identity, workspace, exact invoice ID/revision, exact artifact ID/SHA-256 snapshot, approval timestamp | Immutable and unique per invoice revision; no actor is recorded before authentication exists; later revisions do not inherit it and a different artifact cannot replace it |
 | InvoiceDelivery | Application-generated identity, exact immutable approval/revision/artifact/digest snapshot, requested time, provider-neutral message snapshot, state, ordered attempts | One logical delivery per approval; pending claims are atomic; the message and frozen artifact are stable across retries; provider-accepted `sent` and definitive `failed` are terminal; later revisions cannot retarget it |
@@ -54,6 +55,7 @@ Workspace → ClassificationRule → suggested TimeEntry assignment
 Client / Project → RateAgreement
 TimeEntry → InvoiceAllocation → InvoiceLine → Invoice content version
 Invoice content version + WorkspaceInvoiceSettings → InvoiceTaxCalculation
+Current Invoice content version + tax/date/legal configuration → IssuedInvoice
 Invoice content version → InvoiceApproval → InvoiceDelivery → InvoiceDeliveryAttempt
 Verified provider event → optional InvoiceDeliveryProviderEventMatch → InvoiceDelivery
 Important changes → AuditEvent
@@ -97,7 +99,7 @@ Approval applies to an exact invoice revision and frozen artifact, and delivery 
 Legal billing profiles describe only current party configuration. `Client.name` remains a
 display name and is not promoted to a legal name. Local SIREN/SIRET/French-VAT checks prove
 only shape, checksum where defined, and consistency between identifiers; they do not verify
-registration. A future issued invoice must snapshot the seller and buyer legal identity and
+registration. Issuance snapshots the seller and buyer legal identity and
 addresses it used, so later profile updates cannot change historical reconstruction.
 
 `WorkspaceInvoiceSettings` likewise contains current defaults rather than invoice facts.
@@ -106,15 +108,15 @@ fallback and blocks date derivation. The VAT regime is explicitly either `franch
 or `taxable` with an exact Decimal default VAT percentage; it is never inferred from a VAT
 identification number. Payment terms preserve the selected invoice-date-based rule without
 inventing an issue date or due date. The current hourly-services MVP records the electronic-
-invoice operation category as services. A future issuance operation must resolve these
+invoice operation category as services. Issuance resolves these
 defaults into an immutable snapshot, including the exact rate, dates, amounts, and wording
 actually placed on that invoice.
 
 Invoice date policy distinguishes the supplied UTC issuance instant, its configured IANA
 timezone, the derived local issue date, and the date-only due date. Due on issue and net calendar
 days are direct date calculations. The two explicit 45-days-end-of-month rules respectively add
-45 days after the issue month's end or select the month end after adding 45 days. Future issuance
-must snapshot its instant, timezone identifier, issue date, payment rule, and due date so mutable
+45 days after the issue month's end or select the month end after adding 45 days. Issuance
+snapshots its instant, timezone identifier, issue date, payment rule, and due date so mutable
 configuration and later timezone data cannot rewrite history.
 
 The deterministic VAT calculation remains separate from `InvoiceDraft` construction and from
@@ -124,7 +126,7 @@ HALF_UP policy once per rate group. HT is the sum of rounded lines, VAT is the s
 groups, and TTC is their exact integer-minor-unit sum. Franchise en base instead preserves its
 legal basis and canonical wording with zero VAT and no artificial zero-percent rate. Exact source
 HT and line membership remain available for audit. Mutable settings and this calculation result
-are not historical invoice truth until a future issuance operation snapshots them.
+are not historical invoice truth until issuance snapshots them.
 
 InvoiceDraft revisions are complete immutable snapshots. Revision 1 creates the logical
 invoice identity; later modifications preserve its workspace, client, and currency and
@@ -134,6 +136,15 @@ stable identity for exact revision bytes. No approval record is valid without bo
 exact revision and its artifact identity. Repeating approval of that same exact target
 returns the original immutable record; approving another artifact for the revision is a
 conflict. Revocation and replacement are not defined.
+
+`IssuedInvoice` is a separate immutable legal aggregate, not another mutable draft state. The
+application locks the current draft head, snapshots complete seller/client identity, fiscal/payment
+facts and wording, source line/allocation provenance, VAT groups, exact rational inputs, rounded
+minor-unit totals, UTC/local dates, timezone, and service date, then allocates a legal number and
+persists everything atomically. Its one-per-workspace `main` counter participates in the same
+transaction, so rollback does not consume the number. Issuance freezes revision creation for that
+logical invoice. Existing draft-bound artifacts and approvals do not authorize issuance and are not
+promoted to legal issued artifacts; that integration is future work.
 
 Issue #11 confirms that Client requires a nonblank name. Empty and Unicode
 whitespace-only names are rejected; supplied nonblank names are preserved without
