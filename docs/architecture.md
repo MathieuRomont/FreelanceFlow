@@ -82,7 +82,8 @@ Google Calendar adapter
   → Deterministic VAT calculation
   → Freelancer review
   → Atomic immutable legal issuance and numbering
-  → Future final issued artifact / approval integration
+  → Deterministic final issued PDF artifact
+  → Future issued-artifact approval / delivery integration
 ```
 
 Calendar import and classification produce internal data and suggestions. The freelancer can correct assignments and time. Source updates flag reviewed entries for reconciliation instead of silently replacing edits.
@@ -141,7 +142,14 @@ there is no mutable current-artifact pointer.
 
 The existing artifact/approval/delivery chain remains draft-revision-bound. It is not a final legal
 artifact for `IssuedInvoice`, does not authorize issuance, and is not inherited by issuance. A later
-slice must generate and bind the final issued artifact before issued-invoice approval/delivery.
+slice must bind the separately generated final issued artifact before issued-invoice approval/delivery.
+
+Issued-invoice PDFs are deterministic representations of the immutable `IssuedInvoice` snapshot.
+The renderer receives that complete aggregate and never reads live profiles, settings, drafts, rates,
+or time entries. Each immutable `IssuedInvoiceArtifact` stores exact `BYTEA` content and server-derived
+integrity metadata. One canonical artifact exists per issued invoice, representation type, and explicit
+renderer version; later representation types or renderer versions create separate artifacts without
+reinterpreting historical bytes. Draft-bound artifacts remain a distinct domain identity.
 
 Approval is an immutable record bound to one exact invoice revision, artifact UUID, and
 artifact SHA-256 snapshot. PostgreSQL serializes approval attempts on the revision and
@@ -217,4 +225,9 @@ transaction can make a remote send atomic or claim exactly-once delivery.
 
 Provide replaceable adapters for Google Calendar/OAuth, PostgreSQL repositories and transactions, email delivery, and invoice rendering. Frozen artifact bytes use PostgreSQL `BYTEA` for the MVP. A narrow provider-neutral email port belongs to the Delivery application layer; the Resend HTTP adapter and environment-backed credentials belong to adapters. The adapter Base64-encodes the already-frozen bytes only for transport and never regenerates invoice content. Provider models and credentials stay outside the domain. Tests use controlled implementations of the same ports and transports.
 
-Exact rendering libraries and the worker mechanism remain unresolved implementation choices. Resend is the first MVP transactional email adapter and its delivery-relevant webhooks are verified and retained; provider failover, polling, automatic ambiguous-send recovery, and webhook-driven marketing analytics remain out of scope. Docker Compose currently runs PostgreSQL only; GitHub Actions validates the backend and frontend in separate jobs.
+Issued-invoice PDFs use the pinned ReportLab 5.0.1 adapter with invariant output and its packaged
+embedded Vera fonts; the application renderer port remains provider-independent. The worker mechanism
+remains unresolved. Resend is the first MVP transactional email adapter and its delivery-relevant
+webhooks are verified and retained; provider failover, polling, automatic ambiguous-send recovery,
+and webhook-driven marketing analytics remain out of scope. Docker Compose currently runs PostgreSQL
+only; GitHub Actions validates the backend and frontend in separate jobs.
