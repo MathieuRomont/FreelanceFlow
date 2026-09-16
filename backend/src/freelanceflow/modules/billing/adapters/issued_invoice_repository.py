@@ -102,9 +102,9 @@ class IssuedInvoiceRepository:
         session: Session,
         *,
         workspace_id: UUID,
-        drafts: InvoiceDraftRepository,
-        profiles: BillingProfileRepository,
-        settings: InvoiceSettingsRepository,
+        drafts: InvoiceDraftRepository | None = None,
+        profiles: BillingProfileRepository | None = None,
+        settings: InvoiceSettingsRepository | None = None,
     ) -> None:
         self.session = session
         self.workspace_id = workspace_id
@@ -113,6 +113,8 @@ class IssuedInvoiceRepository:
         self.settings = settings
 
     def lock_draft(self, invoice_id: UUID) -> LockedInvoiceDraft | None:
+        if self.drafts is None:
+            raise RuntimeError("InvoiceDraft repository is unavailable in read-only mode")
         head = self.session.scalar(
             select(InvoiceDraftHeadRow)
             .where(
@@ -129,14 +131,20 @@ class IssuedInvoiceRepository:
         return LockedInvoiceDraft(draft=draft, issued_invoice_id=head.issued_invoice_id)
 
     def get_workspace_profile_for_snapshot(self) -> WorkspaceBillingProfile | None:
+        if self.profiles is None:
+            raise RuntimeError("Billing profiles are unavailable in read-only mode")
         return self.profiles.get_workspace_profile_for_snapshot()
 
     def get_client_profile_for_snapshot(
         self, client_id: UUID
     ) -> ClientBillingProfile | None:
+        if self.profiles is None:
+            raise RuntimeError("Billing profiles are unavailable in read-only mode")
         return self.profiles.get_client_profile_for_snapshot(client_id)
 
     def get_settings_for_snapshot(self) -> WorkspaceInvoiceSettings | None:
+        if self.settings is None:
+            raise RuntimeError("Invoice settings are unavailable in read-only mode")
         return self.settings.get_for_snapshot()
 
     def allocate_number(self, issue_date: date) -> LegalInvoiceNumber:

@@ -23,6 +23,12 @@ from freelanceflow.modules.billing.adapters.invoice_draft_transactions import (
 from freelanceflow.modules.billing.adapters.invoice_settings_transactions import (
     SqlAlchemyInvoiceSettingsTransaction,
 )
+from freelanceflow.modules.billing.adapters.issued_invoice_artifact_transactions import (
+    SqlAlchemyIssuedInvoiceArtifactTransaction,
+)
+from freelanceflow.modules.billing.adapters.issued_invoice_pdf_renderer import (
+    ReportLabIssuedInvoicePdfRenderer,
+)
 from freelanceflow.modules.billing.adapters.issued_invoice_transactions import (
     SqlAlchemyInvoiceIssuanceTransaction,
 )
@@ -45,6 +51,12 @@ from freelanceflow.modules.billing.api.invoice_drafts import get_invoice_draft_s
 from freelanceflow.modules.billing.api.invoice_drafts import router as invoice_draft_router
 from freelanceflow.modules.billing.api.invoice_settings import get_invoice_settings_service
 from freelanceflow.modules.billing.api.invoice_settings import router as invoice_settings_router
+from freelanceflow.modules.billing.api.issued_invoice_artifacts import (
+    get_issued_invoice_artifact_service,
+)
+from freelanceflow.modules.billing.api.issued_invoice_artifacts import (
+    router as issued_invoice_artifact_router,
+)
 from freelanceflow.modules.billing.api.issued_invoices import (
     get_invoice_issuance_service,
 )
@@ -60,6 +72,9 @@ from freelanceflow.modules.billing.application.invoice_artifacts import (
 )
 from freelanceflow.modules.billing.application.invoice_drafts import InvoiceDraftService
 from freelanceflow.modules.billing.application.invoice_settings import InvoiceSettingsService
+from freelanceflow.modules.billing.application.issued_invoice_artifacts import (
+    IssuedInvoiceArtifactService,
+)
 from freelanceflow.modules.billing.application.issued_invoices import InvoiceIssuanceService
 from freelanceflow.modules.billing.application.rate_agreements import RateAgreementService
 from freelanceflow.modules.clients.adapters.repository import ClientRepository
@@ -151,6 +166,11 @@ def create_app(
                 ),
                 clock=invoice_clock,
             )
+            issued_invoice_artifact_service = IssuedInvoiceArtifactService(
+                SqlAlchemyIssuedInvoiceArtifactTransaction(configured_engine),
+                ReportLabIssuedInvoicePdfRenderer(),
+                clock=invoice_clock,
+            )
             invoice_artifact_service = InvoiceArtifactService(
                 SqlAlchemyInvoiceArtifactTransaction(configured_engine)
             )
@@ -189,6 +209,9 @@ def create_app(
             application.dependency_overrides[get_invoice_issuance_service] = (
                 lambda: invoice_issuance_service
             )
+            application.dependency_overrides[get_issued_invoice_artifact_service] = (
+                lambda: issued_invoice_artifact_service
+            )
             application.dependency_overrides[get_invoice_artifact_service] = (
                 lambda: invoice_artifact_service
             )
@@ -219,6 +242,9 @@ def create_app(
             application.dependency_overrides.pop(get_time_entry_service, None)
             application.dependency_overrides.pop(get_invoice_draft_service, None)
             application.dependency_overrides.pop(get_invoice_issuance_service, None)
+            application.dependency_overrides.pop(
+                get_issued_invoice_artifact_service, None
+            )
             application.dependency_overrides.pop(get_invoice_artifact_service, None)
             application.dependency_overrides.pop(get_invoice_approval_service, None)
             application.dependency_overrides.pop(get_invoice_delivery_service, None)
@@ -240,6 +266,7 @@ def create_app(
     application.include_router(time_entry_router)
     application.include_router(invoice_draft_router)
     application.include_router(issued_invoice_router)
+    application.include_router(issued_invoice_artifact_router)
     application.include_router(invoice_artifact_router)
     application.include_router(invoice_approval_router)
     application.include_router(invoice_delivery_router)
