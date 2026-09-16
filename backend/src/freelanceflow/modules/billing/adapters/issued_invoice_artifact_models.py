@@ -37,6 +37,15 @@ class IssuedInvoiceArtifactRow(Base):
             "sha256",
             name="uq_issued_invoice_artifacts_integrity_identity",
         ),
+        UniqueConstraint(
+            "id",
+            "issued_invoice_id",
+            "workspace_id",
+            "sha256",
+            "representation",
+            "renderer_version",
+            name="uq_issued_invoice_artifacts_approval_identity",
+        ),
         CheckConstraint("representation = 'pdf'", name="supported_representation"),
         CheckConstraint("media_type = 'application/pdf'", name="supported_media_type"),
         CheckConstraint(

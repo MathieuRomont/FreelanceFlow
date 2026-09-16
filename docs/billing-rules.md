@@ -131,7 +131,7 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - The configured late-payment rate is checked at issuance against explicitly versioned effective French policy data and both the configured rate and applicable minimum/policy identity are snapshotted. The implementation contains the confirmed 2026 half-year values only and fails explicitly outside those effective periods instead of guessing future law.
 - One continuous `main` legal-number series exists per workspace. The rendered number is the canonical positive decimal sequence without an annual reset. A PostgreSQL counter row is locked and incremented in the same transaction that persists the full issued snapshot and freezes the draft head. Rollback restores the counter, so failed issuance does not consume a number. Database uniqueness enforces one issuance per logical invoice and unique workspace number/sequence.
 - The lock order is the source draft head, current seller profile, current client profile, current invoice settings, then the workspace number counter. Revision creation and issuance serialize on the same head row. After issuance, no later draft revision may be created. Concurrent duplicate issuance of the same exact request returns the existing snapshot; different immutable request facts conflict and cannot allocate another number.
-- Existing `InvoiceArtifact`, `InvoiceApproval`, and `InvoiceDelivery` records remain explicitly bound to draft revisions. They are not reinterpreted as issued-invoice artifacts or legal authorization, and issuance inherits no approval. Final artifact generation and approval/delivery bound to `IssuedInvoice` require a later model.
+- Existing `InvoiceArtifact`, `InvoiceApproval`, and `InvoiceDelivery` records remain explicitly bound to draft revisions. They are not reinterpreted as issued-invoice artifacts or legal authorization, and issuance inherits no approval. Final issued artifacts and their approval use separate models; final-artifact delivery requires later integration.
 
 ### Issued-invoice artifacts (issue #46)
 
@@ -141,7 +141,14 @@ This document is the authoritative source for whether a business rule is CONFIRM
 - Identical input snapshot and renderer version must produce byte-identical output. Renderer output contains no runtime clock, random identifier, host timezone, host font, or volatile PDF metadata.
 - The server derives lowercase hexadecimal SHA-256 and exact byte size. Exact nonempty bytes are stored in PostgreSQL `BYTEA`; artifacts have no update, delete, overwrite, or mutable-current semantics.
 - At most one artifact exists for an issued invoice, representation type, and renderer version. Repeating or concurrently requesting that exact generation returns the existing artifact rather than creating a duplicate.
-- Existing draft approval and delivery do not apply to issued artifacts. Approval and delivery of a final issued artifact remain later explicit work.
+- Existing draft approval and delivery do not apply to issued artifacts. Approval of a final issued artifact is defined separately below; its delivery remains later explicit work.
+
+### Issued-invoice artifact approval (issue #48)
+
+- One immutable `IssuedInvoiceApproval` may exist per `IssuedInvoice`. It binds exactly the workspace, issued-invoice UUID, issued-artifact UUID, lowercase SHA-256, representation type, and renderer version already stored on one immutable final artifact.
+- PostgreSQL serializes approval attempts on the issued invoice and enforces both one approval per issued invoice and the complete artifact identity tuple with foreign keys and uniqueness constraints.
+- Repeating approval of the same exact target returns the original approval, including its identity and UTC timestamp. Attempting to approve a different artifact, representation, or renderer version is a conflict; there is no replacement, revocation, update, or delete behavior.
+- No approving actor is recorded before authentication exists. Draft-bound approval is never inherited, and the final approval currently authorizes no existing draft-bound delivery.
 
 ### Reliability and audit
 
@@ -161,8 +168,8 @@ This document is the authoritative source for whether a business rule is CONFIRM
 
 - Use deterministic classification suggestions initially. Ambiguous/unclassified entries remain subject to the confirmed blocking or explicit-exclusion rule.
 
-Issued-invoice PDF rendering is confirmed above. Factur-X and approval/delivery binding for
-issued artifacts remain separate later work.
+Issued-invoice PDF rendering and exact final-artifact approval are confirmed above. Factur-X and
+delivery binding for issued approvals remain separate later work.
 
 The pure Invoice Draft remains tax-independent. Issuance consumes that immutable draft plus the
 separate VAT calculation, but negative-invoice or credit-note semantics, corrections,
@@ -182,8 +189,9 @@ resolve this ambiguity. Webhooks correlate only through a provider message ID; i
 never persisted or otherwise learned, a verified event remains unmatched. No polling,
 alternative correlation key, or lease duration is selected by this implementation.
 
-Invoice approval now binds the immutable revision and exact artifact atomically. Revocation,
-replacement, and any actor identity remain undefined and must not be inferred.
+Draft and issued-invoice approvals each bind their own immutable exact artifact atomically. They are
+not interchangeable. Revocation, replacement, and any actor identity remain undefined and must not
+be inferred.
 
 | Decision | Questions to settle before implementation |
 | --- | --- |
@@ -198,7 +206,7 @@ replacement, and any actor identity remain undefined and must not be inferred.
 | Allocations | Do drafts reserve time? When is a reservation released? Is partial billing supported, and how are overlaps prevented transactionally? |
 | Additional currencies | EUR with two decimal places is confirmed for MVP invoice drafts. Which additional currencies are supported and what authoritative precision does each use? Currency mismatches are rejected rather than converted or silently split. |
 | Tax and legal scope | France-first current party profiles, VAT settings, franchise treatment, and deterministic ordinary taxable VAT calculation are confirmed above. Exemptions other than franchise en base; reverse charge; intra-EU/export rules; goods and mixed operation categories; goods-delivery addresses; sector/activity registrations or insurance; exact issuance-time statutory validation; and retention rules remain unresolved. Settings and pure calculations are never issued-invoice history. |
-| Numbering extensions and issued artifacts | The continuous per-workspace main sequence, rollback-safe issuance boundary, and deterministic final PDF artifact generation are confirmed above. Annual resets, multiple legal series, deliberate void/cancellation records, Factur-X, and approval/delivery of an issued artifact remain unresolved. |
+| Numbering extensions and issued artifacts | The continuous per-workspace main sequence, rollback-safe issuance boundary, deterministic final PDF artifact generation, and exact final-artifact approval are confirmed above. Annual resets, multiple legal series, deliberate void/cancellation records, Factur-X, and delivery of an issued artifact remain unresolved. |
 | Delivery request details | The sender, recipient, subject, body, and attachment filename supplied to the worker are frozen before the first provider call and cannot change across retries. How are those values selected, when may a user replace an unsent delivery with a new logical delivery, and how is scheduling represented? Immutable invoice revision/artifact content cannot be edited in place. |
 | Abandoned claims and provider idempotency | What lease/timeout identifies an abandoned worker? Which Resend polling/reconciliation operation or additional verified correlation key is authoritative when an uncertain attempt never persisted a provider message ID, or after the provider's idempotency-retention window expires? The stable delivery key and webhook history are confirmed, but exactly-once delivery is not claimed. |
 | Downstream delivery status | Local `sent` means Resend accepted the request, while verified downstream facts remain separate and append-only. What, if any, derived current view should reconcile out-of-order delivered, delayed, bounced, failed, or complained events? How are cancellation and deliberate resend represented? No precedence policy is inferred. |
